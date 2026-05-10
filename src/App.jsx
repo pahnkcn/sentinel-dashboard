@@ -180,7 +180,7 @@ export default function App() {
           for (let i = 1; i < lines.length; i++) { 
             if (!lines[i].trim()) continue;
             const values = lines[i].split(',').map(v => v.trim());
-            if (values.length >= 9) { // format: studentId,name,room,age,gender,region,school,familyHistory,financialBurden
+            if (values.length >= 9) { 
               const sid = values[0];
               const studentName = values[1] || `นรม. รหัส ${sid}`;
               const studentRoom = values[2] || 'ไม่ระบุ';
@@ -384,13 +384,13 @@ export default function App() {
     setUploadStatus('โหลดข้อมูลจำลอง 16 สัปดาห์เรียบร้อยแล้ว');
   };
 
-  // --- DATA AGGREGATION ---
+  // --- DATA AGGREGATION (FLATTENED FOR RECHARTS) ---
   const latestLogs = useMemo(() => {
     const map = {}; logs.forEach(log => { if (!map[log.studentId] || new Date(log.date) > new Date(map[log.studentId].date)) map[log.studentId] = log; });
     return map;
   }, [logs]);
 
-  // Overall Population Trend (Weekly)
+  // Overall Population Trend (Weekly) - Flattened data so Recharts can plot the Line
   const populationWeeklyTrend = useMemo(() => {
     const weeksData = [];
     for (let w = 1; w <= 16; w++) {
@@ -398,23 +398,32 @@ export default function App() {
       const selfArr = weekLogs.map(l => l.self);
       const buddyArr = weekLogs.map(l => l.buddy);
       const cmdArr = weekLogs.map(l => l.command);
+      
+      const selfStats = getStats(selfArr);
+      const buddyStats = getStats(buddyArr);
+      const cmdStats = getStats(cmdArr);
+      
       weeksData.push({
         week: `Wk ${w}`,
-        self: getStats(selfArr), buddy: getStats(buddyArr), command: getStats(cmdArr)
+        self: selfStats.mean, self_sd: selfStats.sd,
+        buddy: buddyStats.mean, buddy_sd: buddyStats.sd,
+        command: cmdStats.mean, command_sd: cmdStats.sd
       });
     }
     return weeksData;
   }, [logs]);
 
-  // Assessments Population Trend
+  // Assessments Population Trend - Flattened
   const assessWeeklyTrend = useMemo(() => {
     const weeks = [0, 4, 8, 16];
     return weeks.map(w => {
       const wData = assessments.filter(a => a.week === w);
+      const dassStats = getStats(wData.map(a => a.dass_s).filter(x => x!==null));
+      const cdStats = getStats(wData.map(a => a.cd_risc).filter(x => x!==null));
       return {
         week: `Wk ${w}`,
-        dass_s: getStats(wData.map(a => a.dass_s).filter(x => x!==null)),
-        cd_risc: getStats(wData.map(a => a.cd_risc).filter(x => x!==null)),
+        dass_s: dassStats.mean, dass_s_sd: dassStats.sd,
+        cd_risc: cdStats.mean, cd_risc_sd: cdStats.sd,
       };
     });
   }, [assessments]);
@@ -498,9 +507,9 @@ export default function App() {
                         return (
                           <div className="bg-white p-3 border shadow rounded text-sm">
                             <p className="font-bold mb-1">{label}</p>
-                            {payload.map((entry, idx) => entry.value?.mean !== null ? (
+                            {payload.map((entry, idx) => entry.value !== null ? (
                               <p key={idx} style={{color: entry.color}}>
-                                {entry.name}: {entry.value?.mean} (SD: {entry.value?.sd})
+                                {entry.name}: {entry.value} (SD: {entry.payload[`${entry.dataKey}_sd`]})
                               </p>
                             ) : null)}
                           </div>
@@ -533,9 +542,9 @@ export default function App() {
                         return (
                           <div className="bg-white p-3 border shadow rounded text-sm">
                             <p className="font-bold mb-1">{label}</p>
-                            {payload.map((entry, idx) => entry.value?.mean !== null ? (
+                            {payload.map((entry, idx) => entry.value !== null ? (
                               <p key={idx} style={{color: entry.color}}>
-                                {entry.name}: {entry.value?.mean} (SD: {entry.value?.sd})
+                                {entry.name}: {entry.value} (SD: {entry.payload[`${entry.dataKey}_sd`]})
                               </p>
                             ) : null)}
                           </div>

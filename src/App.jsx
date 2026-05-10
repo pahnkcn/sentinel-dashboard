@@ -11,9 +11,9 @@ import {
 // ==========================================
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, doc, setDoc, writeBatch, query, limit } from 'firebase/firestore';
 
-// ✅ เชื่อมต่อกับ Firebase ของอาจารย์เรียบร้อยแล้วครับ
+// เชื่อมต่อกับ Firebase Project: sentinel-dashboard-9a05c ของอาจารย์
 const firebaseConfig = {
   apiKey: "AIzaSyBNNcFjfkIko-mN9zpATT_lD0FQuX5wDdA",
   authDomain: "sentinel-dashboard-9a05c.firebaseapp.com",
@@ -35,11 +35,15 @@ const db = getFirestore(app);
 const COLORS = { 1: '#22c55e', 2: '#eab308', 3: '#f97316', 4: '#ef4444' };
 const PIE_COLORS = ['#22c55e', '#eab308', '#f97316', '#ef4444'];
 
+// คำนวณค่าเฉลี่ยและ SD แบบกลุ่มตัวอย่าง (n-1)
 const getStats = (arr) => {
   if (!arr || arr.length === 0) return { mean: null, sd: null };
-  if (arr.length === 1) return { mean: parseFloat(arr[0].toFixed(2)), sd: 0 };
-  const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
-  const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (arr.length - 1);
+  const validData = arr.filter(x => x !== null && !isNaN(x));
+  if (validData.length === 0) return { mean: null, sd: null };
+  if (validData.length === 1) return { mean: parseFloat(validData[0].toFixed(2)), sd: 0 };
+  
+  const mean = validData.reduce((a, b) => a + b, 0) / validData.length;
+  const variance = validData.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (validData.length - 1);
   const sd = Math.sqrt(variance);
   return { mean: parseFloat(mean.toFixed(2)), sd: parseFloat(sd.toFixed(2)) };
 };
@@ -53,7 +57,7 @@ const escapeCSV = (str) => {
   return stringified;
 };
 
-// Batch processing functions
+// จัดการการส่งข้อมูลปริมาณมากเข้า Cloud (Batched Writes)
 const commitInBatches = async (collectionName, items, idField) => {
   for (let i = 0; i < items.length; i += 400) {
     const batch = writeBatch(db);
@@ -79,26 +83,35 @@ export default function App() {
   const [entrySubTab, setEntrySubTab] = useState('daily'); 
   
   // ==========================================
-  // CLOUD STATE
+  // CLOUD DATABASE STATE
   // ==========================================
   const [user, setUser] = useState(null);
   const [students, setStudents] = useState([]);
   const [logs, setLogs] = useState([]); 
   const [assessments, setAssessments] = useState([]);
 
-  // Initialization
+  // 1. ลงชื่อเข้าใช้ (Anonymous)
   useEffect(() => {
-    signInAnonymously(auth).catch(err => console.error("Auth Error:", err));
+    signInAnonymously(auth).catch(err => console.error("Auth Failure:", err));
     return onAuthStateChanged(auth, setUser);
   }, []);
 
-  // Real-time Listeners
+  // 2. ดึงข้อมูล Real-time จาก Cloud
   useEffect(() => {
     if (!user) return;
-    const unsubS = onSnapshot(collection(db, 'students'), (s) => setStudents(s.docs.map(d => d.data())));
-    const unsubL = onSnapshot(collection(db, 'logs'), (s) => setLogs(s.docs.map(d => d.data())));
-    const unsubA = onSnapshot(collection(db, 'assessments'), (s) => setAssessments(s.docs.map(d => d.data())));
-    return () => { unsubS(); unsubL(); unsubA(); };
+    const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
+      setStudents(snapshot.docs.map(d => d.data()));
+    }, (error) => console.error("Firestore Students Error:", error));
+
+    const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
+      setLogs(snapshot.docs.map(d => d.data()));
+    }, (error) => console.error("Firestore Logs Error:", error));
+
+    const unsubAssessments = onSnapshot(collection(db, 'assessments'), (snapshot) => {
+      setAssessments(snapshot.docs.map(d => d.data()));
+    }, (error) => console.error("Firestore Assess Error:", error));
+
+    return () => { unsubStudents(); unsubLogs(); unsubAssessments(); };
   }, [user]);
 
   const [selectedStudent, setSelectedStudent] = useState('');
@@ -108,7 +121,7 @@ export default function App() {
   const [csvUploadType, setCsvUploadType] = useState('daily'); 
   const [heatmapDate, setHeatmapDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Form States
+  // --- FORM STATES ---
   const [dailyForm, setDailyForm] = useState({ studentId: '', date: new Date().toISOString().split('T')[0], week: 1, self: 1, buddy: 1, command: 1, fatigue: 1, injury: 0 });
   const [demoForm, setDemoForm] = useState({ studentId: '', name: '', room: '', age: '', gender: 'ชาย', school: '', region: 'กทม.', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี' });
   const [assessForm, setAssessForm] = useState({ studentId: '', week: 0, dass_d: '', dass_a: '', dass_s: '', cd_risc: '', drawing_note: '' });
@@ -117,7 +130,7 @@ export default function App() {
     if (students.length > 0 && !selectedStudent) setSelectedStudent(students[0].id);
   }, [students, selectedStudent]);
 
-  // --- ACTIONS ---
+  // --- LOGIC: DATA SUBMISSION ---
   const ensureStudentExists = async (sid, demoData = null) => {
     const existing = students.find(s => s.id === sid);
     if (existing) {
@@ -126,7 +139,7 @@ export default function App() {
         await setDoc(doc(db, 'students', sid), up);
       }
     } else {
-      const nw = { id: sid, name: demoData?.name || `นรม. รหัส ${sid}`, room: demoData?.room || 'ไม่ระบุ', baseline: 'Medium', tag: '', isUnderCare: false, demographics: demoData ? { ...demoData, age: parseInt(demoData.age)||0 } : { age: 0, gender: 'ไม่ระบุ', school: 'ไม่ระบุ', region: 'ไม่ระบุ', familyHistory: 'ไม่ระบุ', financialBurden: 'ไม่ระบุ' }, assessments: { dass21: { depression: 0, anxiety: 0, stress: 0 }, cdRisc: 0 } };
+      const nw = { id: sid, name: demoData?.name || `นรม. รหัส ${sid}`, room: demoData?.room || 'ไม่ระบุ', baseline: 'Medium', tag: '', isUnderCare: false, demographics: demoData ? { ...demoData, age: parseInt(demoData.age)||0 } : { age: 0, gender: 'ไม่ระบุ', school: 'ไม่ระบุ', region: 'ไม่ระบุ', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี' }, assessments: { dass21: { depression: 0, anxiety: 0, stress: 0 }, cdRisc: 0 } };
       await setDoc(doc(db, 'students', sid), nw);
     }
   };
@@ -135,42 +148,52 @@ export default function App() {
     e.preventDefault();
     if (!user) return;
     const sid = dailyForm.studentId.trim();
-    const logId = `log_${sid}_${dailyForm.date}`;
+    if (!sid) { alert('กรุณาระบุรหัส นรม.'); return; }
+    
+    const logId = `log_${sid}_${dailyForm.date}`; // ID แบบระบุตัวตน แก้ปัญหาข้อมูลหาย
     const data = { ...dailyForm, id: logId, studentId: sid, self: parseInt(dailyForm.self), buddy: parseInt(dailyForm.buddy), command: parseInt(dailyForm.command), fatigue: parseInt(dailyForm.fatigue), injury: parseInt(dailyForm.injury), week: parseInt(dailyForm.week) };
+    
     await setDoc(doc(db, 'logs', logId), data);
     await ensureStudentExists(sid);
-    alert('บันทึกข้อมูลเรียบร้อย');
+    alert('บันทึกข้อมูลรายวันสำเร็จ');
     setDailyForm({...dailyForm, studentId: ''});
   };
 
   const handleDemoSubmit = async (e) => {
     e.preventDefault();
-    await ensureStudentExists(demoForm.studentId.trim(), demoForm);
-    alert('อัปเดตประวัติเรียบร้อย');
+    const sid = demoForm.studentId.trim();
+    if (!sid) { alert('กรุณาระบุรหัส นรม.'); return; }
+    await ensureStudentExists(sid, demoForm);
+    alert('บันทึกประวัติพื้นฐานสำเร็จ');
     setDemoForm({ studentId: '', name: '', room: '', age: '', gender: 'ชาย', school: '', region: 'กทม.', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี' });
   };
 
   const handleAssessSubmit = async (e) => {
     e.preventDefault();
+    if (!user) return;
     const sid = assessForm.studentId.trim();
     const assessId = `assess_${sid}_${assessForm.week}`;
     const data = { id: assessId, studentId: sid, week: parseInt(assessForm.week), dass_d: assessForm.dass_d ? parseInt(assessForm.dass_d) : null, dass_a: assessForm.dass_a ? parseInt(assessForm.dass_a) : null, dass_s: assessForm.dass_s ? parseInt(assessForm.dass_s) : null, cd_risc: assessForm.cd_risc ? parseInt(assessForm.cd_risc) : null, drawing_note: assessForm.drawing_note };
+    
     await setDoc(doc(db, 'assessments', assessId), data);
     await ensureStudentExists(sid);
-    alert('บันทึกผลประเมินเรียบร้อย');
+    alert('บันทึกแบบประเมินสำเร็จ');
     setAssessForm({ studentId: '', week: 0, dass_d: '', dass_a: '', dass_s: '', cd_risc: '', drawing_note: '' });
   };
 
+  // --- LOGIC: CSV & BULK ---
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file || !user) return;
-    setUploadStatus('กำลังอัปโหลดข้อมูล...');
+    setUploadStatus('กำลังนำเข้าข้อมูล...');
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        const lines = evt.target.result.split('\n');
+        const text = evt.target.result;
+        const lines = text.split('\n');
         const batch = writeBatch(db);
         let count = 0;
+        
         for (let i = 1; i < lines.length; i++) {
           if (!lines[i].trim()) continue;
           const v = lines[i].split(',').map(x => x.trim());
@@ -188,14 +211,16 @@ export default function App() {
           }
         }
         await batch.commit();
-        setUploadStatus(`อัปโหลดสำเร็จ ${count} รายการ`);
+        setUploadStatus(`นำเข้าสำเร็จ ${count} รายการ`);
       } catch (err) { setUploadStatus('เกิดข้อผิดพลาดในการอ่านไฟล์'); }
     };
     reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleResetData = async () => {
-    setUploadStatus('กำลังล้างฐานข้อมูล Cloud...');
+    if (!user) return;
+    setUploadStatus('กำลังล้างข้อมูล Cloud...');
     try {
       await deleteInBatches('logs', logs);
       await deleteInBatches('assessments', assessments);
@@ -205,13 +230,14 @@ export default function App() {
   };
 
   const loadDemoData = async () => {
-    setUploadStatus('กำลังจำลองข้อมูล 112 วันขึ้น Cloud...');
+    if (!user) return;
+    setUploadStatus('กำลังสร้าง Demo 112 วันขึ้น Cloud...');
     const dS = []; const dL = []; const dA = [];
     for(let i=1; i<=10; i++) {
       const sid = i.toString().padStart(3, '0');
       const rm = `10${Math.ceil(i / 2)}`;
       dS.push({ id: sid, name: `นรม. สมมติ ${sid}`, room: rm, baseline: 'Medium', tag: '', isUnderCare: false, demographics: { age: 19, gender: 'ชาย', region: 'กทม.', school: 'มัธยมปลาย', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี' } });
-      [0, 4, 8, 16].forEach(wk => dA.push({ id: `assess_${sid}_${wk}`, studentId: sid, week: wk, dass_d: 6, dass_a: 5, dass_s: 8, cd_risc: 75, drawing_note: '' }));
+      [0, 4, 8, 16].forEach(wk => dA.push({ id: `assess_${sid}_${wk}`, studentId: sid, week: wk, dass_d: 6, dass_a: 5, dass_s: 8, cd_risc: 75, drawing_note: 'วาดภาพปกติ' }));
       for(let w=1; w<=16; w++) {
         for(let d_idx=0; d_idx<7; d_idx++) {
           let date = new Date(2026, 4, 12); date.setDate(date.getDate() + ((w-1)*7) + d_idx);
@@ -223,20 +249,12 @@ export default function App() {
     await commitInBatches('students', dS, 'id');
     await commitInBatches('assessments', dA, 'id');
     await commitInBatches('logs', dL, 'id');
-    setUploadStatus('นำเข้า Demo สำเร็จ');
+    setUploadStatus('โหลด Demo สำเร็จ');
   };
 
-  const downloadTemplate = () => {
-    let h = ""; let ex = ""; let f = ""; const BOM = "\uFEFF"; 
-    if (csvUploadType === 'daily') { h = "studentId,date,week,self,buddy,command,fatigue,injury\n"; ex = "001,2026-05-12,1,1,1,1,2,0\n"; f = "DailyTemplate.csv"; }
-    else if (csvUploadType === 'demographic') { h = "studentId,name,room,age,gender,region,school,familyHistory,financialBurden\n"; ex = "001,กรกฎ,101,18,ชาย,กทม,เตรียม,ไม่มี,ไม่มี\n"; f = "DemoTemplate.csv"; }
-    else { h = "studentId,week,dass_d,dass_a,dass_s,cd_risc,drawing_note\n"; ex = "001,0,5,4,8,80,ปกติ\n"; f = "AssessTemplate.csv"; }
-    const blob = new Blob([BOM + h + ex], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.setAttribute('download', f); document.body.appendChild(link); link.click(); document.body.removeChild(link);
-  };
-
+  // --- EXPORT MASTER DATA ---
   const handleExportMasterData = () => {
-    let csv = "\uFEFF"; 
+    let csv = "\uFEFF"; // BOM for Thai Excel
     csv += "Student_ID,Name,Room,Age,Gender,Region,School,Baseline_Risk,Date,Week,Self,Buddy,Command,Fatigue,DASS_Stress,CD_RISC\n";
     students.forEach(s => {
       const sL = logs.filter(l => l.studentId === s.id);
@@ -247,101 +265,134 @@ export default function App() {
       });
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.setAttribute('download', "Sentinel_Master_Data.csv"); document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.setAttribute('download', "Sentinel_Research_MasterData.csv"); document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
   // --- ANALYTICS ---
   const populationTrend = useMemo(() => Array.from({length: 16}, (_, i) => {
     const w = i + 1; const wL = logs.filter(l => l.week === w);
-    return { week: `Wk ${w}`, self: getStats(wL.map(l => l.self)).mean, self_sd: getStats(wL.map(l => l.self)).sd, buddy: getStats(wL.map(l => l.buddy)).mean, buddy_sd: getStats(wL.map(l => l.buddy)).sd, command: getStats(wL.map(l => l.command)).mean, command_sd: getStats(wL.map(l => l.command)).sd };
+    const selfStats = getStats(wL.map(l => l.self));
+    const buddyStats = getStats(wL.map(l => l.buddy));
+    const cmdStats = getStats(wL.map(l => l.command));
+    return { week: `Wk ${w}`, self: selfStats.mean, self_sd: selfStats.sd, buddy: buddyStats.mean, buddy_sd: buddyStats.sd, command: cmdStats.mean, command_sd: cmdStats.sd };
   }), [logs]);
 
   const psychTrend = useMemo(() => [0, 4, 8, 16].map(w => {
     const wA = assessments.filter(a => a.week === w);
-    return { week: `Wk ${w}`, dass_s: getStats(wA.map(a => a.dass_s).filter(x => x!==null)).mean, dass_s_sd: getStats(wA.map(a => a.dass_s).filter(x => x!==null)).sd, cd_risc: getStats(wA.map(a => a.cd_risc).filter(x => x!==null)).mean, cd_risc_sd: getStats(wA.map(a => a.cd_risc).filter(x => x!==null)).sd };
+    const dassStats = getStats(wA.map(a => a.dass_s).filter(x => x!==null));
+    const cdStats = getStats(wA.map(a => a.cd_risc).filter(x => x!==null));
+    return { week: `Wk ${w}`, dass_s: dassStats.mean, dass_s_sd: dassStats.sd, cd_risc: cdStats.mean, cd_risc_sd: cdStats.sd };
   }), [assessments]);
 
   // --- RENDERS ---
-  const renderOverview = () => (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Users size={24}/></div>
-          <div><p className="text-sm font-medium opacity-60 text-slate-500">นรม. ทั้งหมด</p><p className="text-2xl font-bold text-slate-800">{students.length}</p></div>
-        </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
-          <div className="p-3 bg-rose-50 text-rose-600 rounded-xl"><AlertTriangle size={24}/></div>
-          <div><p className="text-sm font-medium opacity-60 text-slate-500">บันทึกรายวัน (Logs)</p><p className="text-2xl font-bold text-slate-800">{logs.length}</p></div>
-        </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
-          <div className="p-3 bg-purple-50 text-purple-600 rounded-xl"><ShieldCheck size={24}/></div>
-          <div><p className="text-sm font-medium opacity-60 text-slate-500">แบบประเมิน (Assess)</p><p className="text-2xl font-bold text-slate-800">{assessments.length}</p></div>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          <h3 className="text-lg font-bold mb-6 flex items-center text-slate-800"><Activity className="mr-2 text-blue-500" size={20}/> Population Trend: 4 Colors</h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={populationTrend} margin={{top:5, right:20, left:0, bottom:5}}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                <XAxis dataKey="week" tick={{fontSize:10}} interval={0} />
-                <YAxis domain={[1, 4]} ticks={[1,2,3,4]} />
-                <RechartsTooltip content={({active, payload, label}) => active && payload ? (
-                  <div className="bg-white p-3 border rounded-lg shadow-xl text-xs">
-                    <p className="font-bold mb-2 border-b pb-1">{label}</p>
-                    {payload.map((e, i) => <p key={i} style={{color: e.color}}>{e.name}: {e.value} (SD: {e.payload[`${e.dataKey}_sd`]})</p>)}
-                  </div>
-                ) : null} />
-                <Legend iconType="circle" />
-                <Line type="monotone" dataKey="self" name="Self" stroke="#3b82f6" strokeWidth={3} dot={{r:3}} connectNulls />
-                <Line type="monotone" dataKey="buddy" name="Buddy" stroke="#10b981" strokeWidth={3} dot={{r:3}} connectNulls />
-                <Line type="monotone" dataKey="command" name="Command" stroke="#f59e0b" strokeWidth={3} dot={{r:3}} connectNulls />
-              </LineChart>
-            </ResponsiveContainer>
+  const renderOverview = () => {
+    const latestLogsMap = {}; logs.forEach(l => { if (!latestLogsMap[l.studentId] || new Date(l.date) > new Date(latestLogsMap[l.studentId].date)) latestLogsMap[l.studentId] = l; });
+    
+    const demoStats = {
+      avgAge: students.length > 0 ? (students.filter(s=>s.demographics.age>0).reduce((a,b)=>a+b.demographics.age,0)/Math.max(1,students.filter(s=>s.demographics.age>0).length)).toFixed(1) : 0,
+      familyRisk: students.filter(s => s.demographics.familyHistory !== 'ไม่มี').length,
+      burdenRisk: students.filter(s => s.demographics.financialBurden === 'สูง').length
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
+            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Users size={24}/></div>
+            <div><p className="text-sm font-medium opacity-60">นรม. ทั้งหมด</p><p className="text-2xl font-bold">{students.length}</p></div>
+          </div>
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
+            <div className="p-3 bg-rose-50 text-rose-600 rounded-xl"><Activity size={24}/></div>
+            <div><p className="text-sm font-medium opacity-60">บันทึกรายวัน (Logs)</p><p className="text-2xl font-bold">{logs.length}</p></div>
+          </div>
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
+            <div className="p-3 bg-purple-50 text-purple-600 rounded-xl"><ShieldCheck size={24}/></div>
+            <div><p className="text-sm font-medium opacity-60">แบบประเมิน (Assess)</p><p className="text-2xl font-bold">{assessments.length}</p></div>
           </div>
         </div>
+
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          <h3 className="text-lg font-bold mb-6 flex items-center text-slate-800"><BookOpen className="mr-2 text-purple-500" size={20}/> DASS-21 & CD-RISC (Mean)</h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={psychTrend} margin={{top:5, right:20, left:0, bottom:5}}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                <XAxis dataKey="week" tick={{fontSize:10}} interval={0} />
-                <YAxis yAxisId="left" domain={[0, 42]} label={{value:'DASS-21', angle:-90, position:'insideLeft', style:{fontSize:10}}} />
-                <YAxis yAxisId="right" orientation="right" domain={[0, 100]} label={{value:'CD-RISC', angle:90, position:'insideRight', style:{fontSize:10}}} />
-                <RechartsTooltip content={({active, payload, label}) => active && payload ? (
-                  <div className="bg-white p-3 border rounded-lg shadow-xl text-xs">
-                    <p className="font-bold mb-2 border-b pb-1">{label}</p>
-                    {payload.map((e, i) => <p key={i} style={{color: e.color}}>{e.name}: {e.value} (SD: {e.payload[`${e.dataKey}_sd`]})</p>)}
-                  </div>
-                ) : null} />
-                <Legend iconType="circle" />
-                <Line yAxisId="left" type="monotone" dataKey="dass_s" name="Stress" stroke="#ef4444" strokeWidth={3} dot={{r:5}} connectNulls />
-                <Line yAxisId="right" type="monotone" dataKey="cd_risc" name="CD-RISC" stroke="#8b5cf6" strokeWidth={3} dot={{r:5}} connectNulls strokeDasharray="5 5" />
-              </LineChart>
-            </ResponsiveContainer>
+          <h3 className="text-lg font-bold mb-4 flex items-center text-slate-800"><BookOpen className="mr-2 text-blue-500" size={20}/> Demographic & Baseline Data</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-slate-50 p-4 rounded-xl">
+              <p className="text-sm font-bold text-slate-500 mb-2">โปรไฟล์ทั่วไป</p>
+              <p className="text-sm">อายุเฉลี่ย: <b>{demoStats.avgAge} ปี</b></p>
+              <p className="text-sm">นรม. ในคัดกรอง: <b>{students.length} นาย</b></p>
+            </div>
+            <div className="bg-slate-50 p-4 rounded-xl">
+              <p className="text-sm font-bold text-slate-500 mb-2">ปัจจัยความเสี่ยง</p>
+              <p className="text-sm text-rose-600">ประวัติจิตเวชครอบครัว: <b>{demoStats.familyRisk} นาย</b></p>
+              <p className="text-sm text-rose-600">ภาระกังวลทางบ้านสูง: <b>{demoStats.burdenRisk} นาย</b></p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-bold mb-6 flex items-center text-slate-800"><Activity className="mr-2 text-blue-500" size={20}/> Population Trend: 4 Colors</h3>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={populationTrend} margin={{top:5, right:20, left:0, bottom:5}}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                  <XAxis dataKey="week" tick={{fontSize:10}} interval={0} />
+                  <YAxis domain={[1, 4]} ticks={[1,2,3,4]} />
+                  <RechartsTooltip content={({active, payload, label}) => active && payload ? (
+                    <div className="bg-white p-3 border rounded-lg shadow-xl text-xs">
+                      <p className="font-bold mb-2 border-b pb-1">{label}</p>
+                      {payload.map((e, i) => <p key={i} style={{color: e.color}}>{e.name}: {e.value} (SD: {e.payload[`${e.dataKey}_sd`]})</p>)}
+                    </div>
+                  ) : null} />
+                  <Legend iconType="circle" />
+                  <Line type="monotone" dataKey="self" name="Self" stroke="#3b82f6" strokeWidth={3} dot={{r:3}} connectNulls />
+                  <Line type="monotone" dataKey="buddy" name="Buddy" stroke="#10b981" strokeWidth={3} dot={{r:3}} connectNulls />
+                  <Line type="monotone" dataKey="command" name="Command" stroke="#f59e0b" strokeWidth={3} dot={{r:3}} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-bold mb-6 flex items-center text-slate-800"><ShieldCheck className="mr-2 text-purple-500" size={20}/> Psychological Baseline (Mean)</h3>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={psychTrend} margin={{top:5, right:20, left:0, bottom:5}}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                  <XAxis dataKey="week" tick={{fontSize:10}} interval={0} />
+                  <YAxis yAxisId="left" domain={[0, 42]} label={{value:'DASS-21', angle:-90, position:'insideLeft', style:{fontSize:10}}} />
+                  <YAxis yAxisId="right" orientation="right" domain={[0, 100]} label={{value:'CD-RISC', angle:90, position:'insideRight', style:{fontSize:10}}} />
+                  <RechartsTooltip content={({active, payload, label}) => active && payload ? (
+                    <div className="bg-white p-3 border rounded-lg shadow-xl text-xs">
+                      <p className="font-bold mb-2 border-b pb-1">{label}</p>
+                      {payload.map((e, i) => e.value ? <p key={i} style={{color: e.color}}>{e.name}: {e.value} (SD: {e.payload[`${e.dataKey}_sd`]})</p> : null)}
+                    </div>
+                  ) : null} />
+                  <Legend iconType="circle" />
+                  <Line yAxisId="left" type="monotone" dataKey="dass_s" name="Stress (DASS)" stroke="#ef4444" strokeWidth={3} dot={{r:5}} connectNulls />
+                  <Line yAxisId="right" type="monotone" dataKey="cd_risc" name="CD-RISC" stroke="#8b5cf6" strokeWidth={3} dot={{r:5}} connectNulls strokeDasharray="5 5" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderHeatmap = () => {
     const lDate = logs.filter(l => l.date === heatmapDate);
     const m = {}; lDate.forEach(l => m[l.studentId] = l);
-    const rms = [...new Set(students.map(s => s.room))].filter(Boolean).sort();
+    const rooms = [...new Set(students.map(s => s.room))].filter(Boolean).sort();
+
     return (
       <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm min-h-[600px]">
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 border-b pb-6">
-          <h3 className="text-xl font-black text-slate-800">Heatmap สภาวะจิตใจรายห้องพัก</h3>
+          <h3 className="text-xl font-black text-slate-800">Heatmap สถานะรายห้องพัก</h3>
           <div className="flex items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
             <Calendar size={18} className="text-slate-400 mr-3" />
             <span className="text-sm font-bold text-slate-600 mr-3">เลือกวันที่:</span>
             <input type="date" className="bg-white border rounded-lg px-3 py-1.5 text-sm font-bold outline-none" value={heatmapDate} onChange={(e) => setHeatmapDate(e.target.value)} />
           </div>
         </div>
-        {rms.map(rm => (
+        {rooms.length > 0 ? rooms.map(rm => (
           <div key={rm} className="mb-10">
             <h4 className="text-lg font-bold mb-4 text-blue-700 bg-blue-50/50 inline-block px-4 py-1 rounded-full">ห้องพัก: {rm}</h4>
             <div className="overflow-x-auto rounded-xl border border-slate-100">
@@ -355,9 +406,9 @@ export default function App() {
                     return (
                     <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition">
                       <td className="p-4 text-slate-400">{s.id}</td><td className="p-4 font-bold text-slate-700">{s.name}</td>
-                      <td className="p-4"><div className="w-full h-8 rounded-lg" style={{backgroundColor: COLORS[st.self] || '#f1f5f9'}}></div></td>
-                      <td className="p-4"><div className="w-full h-8 rounded-lg" style={{backgroundColor: COLORS[st.buddy] || '#f1f5f9'}}></div></td>
-                      <td className="p-4"><div className="w-full h-8 rounded-lg" style={{backgroundColor: COLORS[st.command] || '#f1f5f9'}}></div></td>
+                      <td className="p-4"><div className="w-full h-8 rounded-lg shadow-inner" style={{backgroundColor: COLORS[st.self] || '#f1f5f9'}}></div></td>
+                      <td className="p-4"><div className="w-full h-8 rounded-lg shadow-inner" style={{backgroundColor: COLORS[st.buddy] || '#f1f5f9'}}></div></td>
+                      <td className="p-4"><div className="w-full h-8 rounded-lg shadow-inner" style={{backgroundColor: COLORS[st.command] || '#f1f5f9'}}></div></td>
                       <td className="p-4 text-center font-bold text-slate-600">{st.self > 0 ? `${st.fatigue}/10` : '-'}</td>
                     </tr>
                   )})}
@@ -365,40 +416,41 @@ export default function App() {
               </table>
             </div>
           </div>
-        ))}
+        )) : <div className="text-center p-20 text-slate-400">ยังไม่มีข้อมูล นรม. ในระบบ</div>}
       </div>
     );
   };
 
   const renderIndividual = () => {
     const s = students.find(x => x.id === selectedStudent);
-    if(!s) return <div className="p-12 text-center text-slate-400">กรุณาเลือกนักเรียน</div>;
+    if(!s) return <div className="p-12 text-center text-slate-400">กรุณาเลือกนักเรียนจากเมนู</div>;
     const sL = logs.filter(l => l.studentId === selectedStudent).sort((a,b) => new Date(a.date) - new Date(b.date));
     const sA = assessments.filter(a => a.studentId === selectedStudent).sort((a,b) => a.week - b.week);
     return (
       <div className="space-y-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
-          <h3 className="text-xl font-bold">ข้อมูล นรม.: {s.name}</h3>
+          <h3 className="text-xl font-bold">ผลวิเคราะห์: {s.name}</h3>
           <select className="bg-slate-50 border rounded-xl px-4 py-2 font-bold outline-none" value={selectedStudent} onChange={(e) => setSelectedStudent(e.target.value)}>
             {students.map(sx => <option key={sx.id} value={sx.id}>{sx.id} - {sx.name}</option>)}
           </select>
         </div>
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
-             <h4 className="font-bold border-b pb-2 text-blue-600">ประวัติพื้นฐาน</h4>
+             <h4 className="font-bold border-b pb-2 text-blue-600">ข้อมูลพื้นฐาน</h4>
              <div className="text-sm space-y-2">
                 <p>ห้องพัก: <b>{s.room}</b></p>
                 <p>ภูมิลำเนา: <b>{s.demographics.region}</b></p>
-                <p>ประวัติจิตเวช: <b className="text-rose-500">{s.demographics.familyHistory}</b></p>
+                <p>ภาระทางบ้าน: <b className={s.demographics.financialBurden==='สูง'?'text-rose-500':''}>{s.demographics.financialBurden}</b></p>
+                <p>ประวัติจิตเวช: <b className={s.demographics.familyHistory!=='ไม่มี'?'text-rose-500':''}>{s.demographics.familyHistory}</b></p>
              </div>
              <div className="pt-4 border-t">
-                <h4 className="font-bold text-slate-800 mb-2">Drawing Test Note:</h4>
+                <h4 className="font-bold text-slate-800 mb-2">Note (Drawing Test)</h4>
                 <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-lg">"{sA.find(x=>x.week===0)?.drawing_note || 'ไม่มีข้อมูล'}"</p>
              </div>
           </div>
           <div className="col-span-1 xl:col-span-2 space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-               <h4 className="font-bold mb-4">4 Colors Daily Trend</h4>
+               <h4 className="font-bold mb-4">4 Colors Trend (รายวัน)</h4>
                <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={sL.map(l => ({ date: l.date, show: l.date.substring(5), self: l.self, buddy: l.buddy, cmd: l.command }))}>
@@ -408,8 +460,24 @@ export default function App() {
                       <RechartsTooltip />
                       <Line type="stepAfter" dataKey="self" stroke="#3b82f6" strokeWidth={3} dot={false} />
                       <Line type="stepAfter" dataKey="buddy" stroke="#10b981" strokeWidth={3} dot={false} />
-                      <Line type="stepAfter" dataKey="cmd" stroke="#f59e0b" strokeWidth={3} dot={false} />
+                      <Line type="stepAfter" dataKey="cmd" name="Command" stroke="#f59e0b" strokeWidth={3} dot={false} />
                       <Brush dataKey="date" height={20} stroke="#cbd5e1" travellerWidth={10} />
+                    </LineChart>
+                  </ResponsiveContainer>
+               </div>
+            </div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+               <h4 className="font-bold mb-4">Psychological Assessments (รายสัปดาห์)</h4>
+               <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sA}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                      <XAxis dataKey="week" tick={{fontSize:10}} interval={0} format={v => `Wk ${v}`} />
+                      <YAxis yAxisId="left" domain={[0, 42]} />
+                      <YAxis yAxisId="right" orientation="right" domain={[0, 100]} />
+                      <RechartsTooltip />
+                      <Line yAxisId="left" type="monotone" dataKey="dass_s" name="Stress" stroke="#ef4444" strokeWidth={4} />
+                      <Line yAxisId="right" type="monotone" dataKey="cd_risc" name="CD-RISC" stroke="#8b5cf6" strokeWidth={4} strokeDasharray="5 5" />
                     </LineChart>
                   </ResponsiveContainer>
                </div>
@@ -425,12 +493,12 @@ export default function App() {
       <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h3 className="text-2xl font-black text-blue-900 flex items-center"><Database className="mr-3 text-blue-500" /> Data Center</h3>
-          <p className="text-sm text-slate-500 mt-2">ศูนย์จัดการฐานข้อมูล Cloud (Google Firebase)</p>
+          <p className="text-sm text-slate-500 mt-2">ศูนย์จัดการฐานข้อมูล Cloud (Live Sync Active)</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <button onClick={handleExportMasterData} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center shadow-lg shadow-emerald-100"><Download size={18} className="mr-2"/> Export CSV</button>
-          <button onClick={loadDemoData} className="bg-indigo-50 text-indigo-700 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-indigo-200">Load Demo</button>
-          <button onClick={() => setShowConfirmReset(true)} className="bg-rose-50 text-rose-700 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-rose-200"><Trash2 size={18} className="mr-2"/> Reset Cloud</button>
+          <button onClick={handleExportMasterData} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center shadow-lg transition-all"><Download size={18} className="mr-2"/> Export CSV</button>
+          <button onClick={loadDemoData} className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-indigo-200 transition-all">Load Demo</button>
+          <button onClick={() => setShowConfirmReset(true)} className="bg-rose-50 text-rose-700 hover:bg-rose-100 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-rose-200 transition-all">Reset Cloud</button>
         </div>
       </div>
 
@@ -440,52 +508,52 @@ export default function App() {
           <h4 className="text-xl font-bold mb-6">ยืนยันการล้างฐานข้อมูล Cloud ถาวร?</h4>
           <div className="flex justify-center space-x-4">
             <button onClick={() => setShowConfirmReset(false)} className="px-8 py-2 bg-white/20 rounded-xl font-bold">ยกเลิก</button>
-            <button onClick={handleResetData} className="px-8 py-2 bg-white text-rose-600 rounded-xl font-bold">ยืนยันการลบ</button>
+            <button onClick={handleResetData} className="px-8 py-2 bg-white text-rose-600 rounded-xl font-bold hover:bg-rose-50">ยืนยันการลบ</button>
           </div>
         </div>
       )}
 
       <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
         <div className="flex flex-col md:flex-row justify-between md:items-center mb-8 gap-4 border-b pb-6">
-          <h3 className="text-xl font-bold text-slate-800 flex items-center"><UploadCloud className="mr-3 text-blue-500"/> อัปโหลด CSV</h3>
-          <select className="bg-blue-50 text-blue-800 font-bold text-sm rounded-xl px-4 py-2 outline-none" value={csvUploadType} onChange={(e) => setCsvUploadType(e.target.value)}>
+          <h3 className="text-xl font-bold text-slate-800 flex items-center"><UploadCloud className="mr-3 text-blue-500"/> นำเข้า CSV (Bulk)</h3>
+          <select className="bg-blue-50 text-blue-800 font-bold text-sm rounded-xl px-4 py-2 outline-none border border-blue-100" value={csvUploadType} onChange={(e) => setCsvUploadType(e.target.value)}>
             <option value="daily">บันทึกรายวัน (4 สี)</option>
-            <option value="demographic">ประวัติพื้นฐาน</option>
-            <option value="assessment">แบบประเมิน</option>
+            <option value="demographic">ประวัติพื้นฐาน (Demographic)</option>
+            <option value="assessment">แบบประเมิน (Assessment)</option>
           </select>
         </div>
         <div className="space-y-6">
-          <div className="p-12 border-4 border-dashed border-slate-100 bg-slate-50/50 rounded-3xl text-center hover:border-blue-200 transition-all cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+          <div className="p-12 border-4 border-dashed border-slate-100 bg-slate-50/50 rounded-3xl text-center hover:border-blue-200 transition-all cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
             <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-            <div className="bg-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-white shadow-lg"><UploadCloud size={32}/></div>
-            <p className="text-lg font-bold text-blue-900">คลิกเพื่อเลือกไฟล์ CSV</p>
-            <p className="text-xs text-slate-400 mt-2 italic">* ข้อมูลจะถูกซิงค์ขึ้น Cloud แบบ Real-time ทันที</p>
+            <div className="bg-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-white shadow-lg group-hover:scale-110 transition-transform"><UploadCloud size={32}/></div>
+            <p className="text-lg font-bold text-blue-900 tracking-tight">คลิกเพื่ออัปโหลดไฟล์ข้อมูล</p>
+            <p className="text-xs text-slate-400 mt-2 font-medium italic">* ทุกคนจะเห็นข้อมูลที่อัปโหลดพร้อมกันทันที</p>
           </div>
-          {uploadStatus && <div className="bg-blue-50 text-blue-700 p-4 rounded-xl text-center font-bold text-sm">{uploadStatus}</div>}
-          <div className="flex justify-center"><button onClick={downloadTemplate} className="text-blue-500 font-bold text-xs flex items-center hover:underline"><Download size={14} className="mr-1"/> ดาวน์โหลด Template ตัวอย่างที่นี่</button></div>
+          {uploadStatus && <div className="bg-blue-50 text-blue-700 p-4 rounded-xl text-center font-bold text-sm border border-blue-100">{uploadStatus}</div>}
+          <div className="flex justify-center"><button onClick={downloadTemplate} className="text-blue-500 font-bold text-xs flex items-center hover:underline bg-blue-50 px-4 py-1 rounded-full"><Download size={14} className="mr-1"/> Download Template ตัวอย่างที่นี่</button></div>
         </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="flex bg-slate-50 p-1">
           {['daily', 'demographic', 'assessment'].map(t => (
-            <button key={t} onClick={()=>setEntrySubTab(t)} className={`flex-1 py-3 font-bold text-xs rounded-xl transition-all ${entrySubTab===t?'bg-white text-blue-600 shadow-sm':'text-slate-400'}`}>{t==='daily'?'รายวัน':t==='demographic'?'ประวัติ':'ประเมิน'}</button>
+            <button key={t} onClick={()=>setEntrySubTab(t)} className={`flex-1 py-3 font-bold text-xs rounded-xl transition-all ${entrySubTab===t?'bg-white text-blue-600 shadow-sm border border-slate-100':'text-slate-400'}`}>{t==='daily'?'บันทึกรายวัน':t==='demographic'?'ประวัติ':'แบบประเมิน'}</button>
           ))}
         </div>
         <div className="p-8">
           {entrySubTab === 'daily' && (
             <form onSubmit={handleDailySubmit} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase">รหัส นรม.</label><input type="text" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-slate-50 outline-none" value={dailyForm.studentId} onChange={(e) => setDailyForm({...dailyForm, studentId: e.target.value})} placeholder="001" required /></div>
-                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase">สัปดาห์</label><input type="number" min="1" max="16" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-slate-50 outline-none" value={dailyForm.week} onChange={(e) => setDailyForm({...dailyForm, week: e.target.value})} required /></div>
-                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase">วันที่</label><input type="date" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-slate-50 outline-none" value={dailyForm.date} onChange={(e) => setDailyForm({...dailyForm, date: e.target.value})} required /></div>
+                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">รหัส นรม.</label><input type="text" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-slate-50 outline-none focus:border-blue-400" value={dailyForm.studentId} onChange={(e) => setDailyForm({...dailyForm, studentId: e.target.value})} placeholder="001" required /></div>
+                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">สัปดาห์ที่</label><input type="number" min="1" max="16" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-slate-50 outline-none focus:border-blue-400" value={dailyForm.week} onChange={(e) => setDailyForm({...dailyForm, week: e.target.value})} required /></div>
+                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">วันที่</label><input type="date" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-slate-50 outline-none focus:border-blue-400" value={dailyForm.date} onChange={(e) => setDailyForm({...dailyForm, date: e.target.value})} required /></div>
               </div>
               <div className="grid grid-cols-3 gap-4 p-6 bg-blue-50/50 rounded-2xl border border-blue-100">
                 {['self', 'buddy', 'command'].map(k => (
-                  <div key={k}><label className="block text-[10px] font-black text-blue-400 mb-2 uppercase">{k}</label><select className="w-full p-2 border border-blue-200 rounded-lg font-bold text-blue-900" value={dailyForm[k]} onChange={(e)=>setDailyForm({...dailyForm,[k]:e.target.value})}><option value="1">1-เขียว</option><option value="2">2-เหลือง</option><option value="3">3-ส้ม</option><option value="4">4-แดง</option></select></div>
+                  <div key={k}><label className="block text-[10px] font-black text-blue-400 mb-2 uppercase tracking-widest">{k}</label><select className="w-full p-2 border border-blue-200 rounded-lg font-bold text-blue-900" value={dailyForm[k]} onChange={(e)=>setDailyForm({...dailyForm,[k]:e.target.value})}><option value="1">1-เขียว</option><option value="2">2-เหลือง</option><option value="3">3-ส้ม</option><option value="4">4-แดง</option></select></div>
                 ))}
               </div>
-              <button type="submit" className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl shadow-slate-200 tracking-widest uppercase">ยืนยันการบันทึกรายวัน</button>
+              <button type="submit" className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl shadow-slate-200 tracking-widest uppercase hover:bg-black transition-all">ยืนยันการบันทึกรายวัน</button>
             </form>
           )}
           {entrySubTab === 'demographic' && (
@@ -495,16 +563,16 @@ export default function App() {
                 <div><label className="block text-xs font-bold text-slate-400 mb-1">ชื่อ-สกุล</label><input type="text" className="w-full p-3 border rounded-xl" value={demoForm.name} onChange={(e) => setDemoForm({...demoForm, name: e.target.value})} placeholder="นรม. กรกฎ" required /></div>
                 <div><label className="block text-xs font-bold text-slate-400 mb-1">ห้องพัก</label><input type="text" className="w-full p-3 border rounded-xl" value={demoForm.room} onChange={(e) => setDemoForm({...demoForm, room: e.target.value})} placeholder="101" required /></div>
               </div>
-              <button type="submit" className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-100">บันทึกประวัติ</button>
+              <button type="submit" className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-blue-700 transition-all">บันทึกประวัติพื้นฐาน</button>
             </form>
           )}
           {entrySubTab === 'assessment' && (
             <form onSubmit={handleAssessSubmit} className="space-y-6">
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div><label className="block text-xs font-bold text-slate-400 mb-1">รหัส นรม.</label><input type="text" className="w-full p-3 border rounded-xl" value={assessForm.studentId} onChange={(e) => setAssessForm({...assessForm, studentId: e.target.value})} placeholder="001" required /></div>
-                <div><label className="block text-xs font-bold text-slate-400 mb-1">สัปดาห์</label><select className="w-full p-3 border rounded-xl font-bold" value={assessForm.week} onChange={(e) => setAssessForm({...assessForm, week: e.target.value})}><option value="0">Wk 0</option><option value="4">Wk 4</option><option value="8">Wk 8</option><option value="16">Wk 16</option></select></div>
+                <div><label className="block text-xs font-bold text-slate-400 mb-1">สัปดาห์</label><select className="w-full p-3 border rounded-xl font-bold outline-none" value={assessForm.week} onChange={(e) => setAssessForm({...assessForm, week: e.target.value})}><option value="0">Wk 0</option><option value="4">Wk 4</option><option value="8">Wk 8</option><option value="16">Wk 16</option></select></div>
               </div>
-              <button type="submit" className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-purple-100">บันทึกประเมิน</button>
+              <button type="submit" className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-purple-700 transition-all">บันทึกผลการประเมิน</button>
             </form>
           )}
         </div>
@@ -534,9 +602,12 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <div className="p-6 text-center border-t border-white/5 bg-slate-900/50">
+           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">Live Cloud Sync: Active</p>
+        </div>
       </div>
 
-      <div className="flex-1 p-6 md:p-12 overflow-y-auto">
+      <div className="flex-1 p-6 md:p-12 overflow-y-auto bg-[#f8fafc]">
         <header className="mb-12 flex justify-between items-end">
           <div>
             <h2 className="text-4xl font-black text-slate-900 tracking-tight">
@@ -546,10 +617,10 @@ export default function App() {
               {activeTab === 'entry' && 'Data Center'}
             </h2>
             <p className="text-slate-400 text-sm mt-3 flex items-center font-bold font-mono">
-              <Clock size={16} className="mr-2" /> LIVE CLOUD SYNC ACTIVE
+              <Clock size={16} className="mr-2" /> live syncing from {firebaseConfig.projectId}
             </p>
           </div>
-          {!user && <div className="text-orange-500 text-xs font-bold animate-pulse">CONNECTING...</div>}
+          {!user && <div className="text-orange-500 text-xs font-bold animate-pulse px-4 py-1 bg-orange-50 rounded-full border border-orange-100 uppercase tracking-widest">Database Connecting...</div>}
         </header>
         <main className="max-w-7xl">
           {activeTab === 'overview' && renderOverview()}

@@ -3,7 +3,7 @@ import {
   PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Brush, BarChart, Bar, ErrorBar
 } from 'recharts';
 import { 
-  LayoutDashboard, Users, User, FileEdit, AlertTriangle, Activity, CheckCircle, Clock, HeartPulse, Stethoscope, UploadCloud, Download, Trash2, X, BookOpen, ShieldCheck, Database
+  LayoutDashboard, Users, User, FileEdit, AlertTriangle, Activity, CheckCircle, Clock, HeartPulse, Stethoscope, UploadCloud, Download, Trash2, X, BookOpen, ShieldCheck, Database, Calendar
 } from 'lucide-react';
 
 // ==========================================
@@ -25,6 +25,16 @@ const getStats = (arr) => {
   return { mean: parseFloat(mean.toFixed(2)), sd: parseFloat(sd.toFixed(2)) };
 };
 
+// Helper for CSV escaping
+const escapeCSV = (str) => {
+  if (str === null || str === undefined) return '';
+  const stringified = String(str);
+  if (stringified.includes(',') || stringified.includes('"') || stringified.includes('\n')) {
+    return `"${stringified.replace(/"/g, '""')}"`;
+  }
+  return stringified;
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('entry'); 
   const [entrySubTab, setEntrySubTab] = useState('daily'); // daily, demographic, assessment
@@ -37,6 +47,10 @@ export default function App() {
   const fileInputRef = useRef(null);
   const [uploadStatus, setUploadStatus] = useState('');
   const [showConfirmReset, setShowConfirmReset] = useState(false);
+  const [csvUploadType, setCsvUploadType] = useState('daily'); // 'daily', 'demographic', 'assessment'
+  
+  // State สำหรับเลือกวันที่ในหน้า Heatmap
+  const [heatmapDate, setHeatmapDate] = useState(new Date().toISOString().split('T')[0]);
 
   // --- FORM STATES ---
   const [dailyForm, setDailyForm] = useState({
@@ -45,7 +59,7 @@ export default function App() {
   });
 
   const [demoForm, setDemoForm] = useState({
-    studentId: '', age: '', gender: 'ชาย', school: '', region: 'กทม.', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี'
+    studentId: '', name: '', room: '', age: '', gender: 'ชาย', school: '', region: 'กทม.', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี'
   });
 
   const [assessForm, setAssessForm] = useState({
@@ -56,7 +70,7 @@ export default function App() {
     if (students.length > 0 && !selectedStudent) setSelectedStudent(students[0].id);
   }, [students, selectedStudent]);
 
-  // --- SUBMIT HANDLERS ---
+  // --- SUBMIT HANDLERS (MANUAL) ---
   const handleDailySubmit = (e) => {
     e.preventDefault();
     const sid = dailyForm.studentId.trim();
@@ -79,7 +93,7 @@ export default function App() {
     
     ensureStudentExists(sid, demoForm);
     alert(`อัปเดตประวัติพื้นฐานของ นรม.รหัส ${sid} สำเร็จ!`);
-    setDemoForm({ studentId: '', age: '', gender: 'ชาย', school: '', region: 'กทม.', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี' });
+    setDemoForm({ studentId: '', name: '', room: '', age: '', gender: 'ชาย', school: '', region: 'กทม.', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี' });
   };
 
   const handleAssessSubmit = (e) => {
@@ -106,15 +120,137 @@ export default function App() {
       if (existingIndex >= 0) {
         if (demoData) {
           const updated = [...prev];
+          updated[existingIndex].name = demoData.name && demoData.name.trim() !== '' ? demoData.name : updated[existingIndex].name;
+          updated[existingIndex].room = demoData.room && demoData.room.trim() !== '' ? demoData.room : updated[existingIndex].room;
           updated[existingIndex].demographics = { ...demoData, age: parseInt(demoData.age)||0 };
           return updated;
         }
         return prev;
       }
       return [...prev, {
-        id: sid, name: `นรม. รหัส ${sid}`, room: 'ไม่ระบุ', baseline: 'Medium', tag: '', isUnderCare: false,
-        demographics: demoData ? { ...demoData, age: parseInt(demoData.age)||0 } : { age: 0, gender: 'ไม่ระบุ', school: 'ไม่ระบุ', region: 'ไม่ระบุ', familyHistory: 'ไม่ระบุ', financialBurden: 'ไม่ระบุ' }
+        id: sid, 
+        name: demoData && demoData.name && demoData.name.trim() !== '' ? demoData.name : `นรม. รหัส ${sid}`, 
+        room: demoData && demoData.room && demoData.room.trim() !== '' ? demoData.room : 'ไม่ระบุ', 
+        baseline: 'Medium', tag: '', isUnderCare: false,
+        demographics: demoData ? { ...demoData, age: parseInt(demoData.age)||0 } : { age: 0, gender: 'ไม่ระบุ', school: 'ไม่ระบุ', region: 'ไม่ระบุ', familyHistory: 'ไม่ระบุ', financialBurden: 'ไม่ระบุ' },
+        assessments: { dass21: { depression: 0, anxiety: 0, stress: 0 }, cdRisc: 0 }
       }];
+    });
+  };
+
+  // --- SUBMIT HANDLERS (CSV BULK UPLOAD) ---
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadStatus('กำลังประมวลผล...');
+    const reader = new FileReader();
+    
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target.result;
+        const lines = text.split('\n');
+        let successCount = 0;
+        const newStudentIds = new Set();
+
+        if (csvUploadType === 'daily') {
+          const newLogs = [];
+          for (let i = 1; i < lines.length; i++) { 
+            if (!lines[i].trim()) continue;
+            const values = lines[i].split(',').map(v => v.trim());
+            if (values.length >= 8) { 
+              const sid = values[0];
+              newLogs.push({
+                id: Date.now() + i, studentId: sid, date: values[1], week: parseInt(values[2]) || 1,
+                self: parseInt(values[3]) || 1, buddy: parseInt(values[4]) || 1, command: parseInt(values[5]) || 1, 
+                fatigue: parseInt(values[6]) || 1, injury: parseInt(values[7]) || 0
+              });
+              newStudentIds.add(sid);
+              successCount++;
+            }
+          }
+          if (newLogs.length > 0) {
+            setLogs(prev => [...prev, ...newLogs]);
+            updateStudentsListBulk(newStudentIds);
+            setUploadStatus(`อัปโหลดบันทึกรายวันสำเร็จ จำนวน ${successCount} รายการ`);
+          } else throw new Error("Format Mismatch");
+
+        } else if (csvUploadType === 'demographic') {
+          const newStudentsList = [...students];
+          for (let i = 1; i < lines.length; i++) { 
+            if (!lines[i].trim()) continue;
+            const values = lines[i].split(',').map(v => v.trim());
+            if (values.length >= 9) { // format: studentId,name,room,age,gender,region,school,familyHistory,financialBurden
+              const sid = values[0];
+              const studentName = values[1] || `นรม. รหัส ${sid}`;
+              const studentRoom = values[2] || 'ไม่ระบุ';
+              const demoData = { age: parseInt(values[3])||0, gender: values[4], region: values[5], school: values[6], familyHistory: values[7], financialBurden: values[8] };
+              
+              const idx = newStudentsList.findIndex(s => s.id === sid);
+              if (idx >= 0) {
+                newStudentsList[idx].name = studentName !== `นรม. รหัส ${sid}` ? studentName : newStudentsList[idx].name;
+                newStudentsList[idx].room = studentRoom !== 'ไม่ระบุ' ? studentRoom : newStudentsList[idx].room;
+                newStudentsList[idx].demographics = demoData;
+              } else {
+                newStudentsList.push({
+                  id: sid, name: studentName, room: studentRoom, baseline: 'Medium', tag: '', isUnderCare: false,
+                  demographics: demoData, assessments: { dass21: { depression: 0, anxiety: 0, stress: 0 }, cdRisc: 0 }
+                });
+              }
+              successCount++;
+            }
+          }
+          if (successCount > 0) {
+            setStudents(newStudentsList);
+            setUploadStatus(`อัปโหลดประวัติพื้นฐานสำเร็จ จำนวน ${successCount} รายการ`);
+          } else throw new Error("Format Mismatch");
+
+        } else if (csvUploadType === 'assessment') {
+          const newAssess = [];
+          for (let i = 1; i < lines.length; i++) { 
+            if (!lines[i].trim()) continue;
+            const values = lines[i].split(',').map(v => v.trim());
+            if (values.length >= 7) { 
+              const sid = values[0];
+              newAssess.push({
+                id: Date.now() + i, studentId: sid, week: parseInt(values[1]) || 0,
+                dass_d: values[2] ? parseInt(values[2]) : null, dass_a: values[3] ? parseInt(values[3]) : null,
+                dass_s: values[4] ? parseInt(values[4]) : null, cd_risc: values[5] ? parseInt(values[5]) : null,
+                drawing_note: values[6] || ''
+              });
+              newStudentIds.add(sid);
+              successCount++;
+            }
+          }
+          if (newAssess.length > 0) {
+            setAssessments(prev => [...prev, ...newAssess]);
+            updateStudentsListBulk(newStudentIds);
+            setUploadStatus(`อัปโหลดแบบประเมินสำเร็จ จำนวน ${successCount} รายการ`);
+          } else throw new Error("Format Mismatch");
+        }
+
+      } catch (error) {
+        setUploadStatus('เกิดข้อผิดพลาด หรือรูปแบบไฟล์ CSV ไม่ถูกต้องตาม Template');
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const updateStudentsListBulk = (newStudentIds) => {
+    setStudents(prevStudents => {
+      const existingIds = new Set(prevStudents.map(s => s.id));
+      const studentsToAdd = [];
+      newStudentIds.forEach(id => {
+        if (!existingIds.has(id)) {
+          studentsToAdd.push({
+            id: id, name: `นรม. รหัส ${id}`, room: 'ไม่ระบุ', baseline: 'Medium', tag: '', isUnderCare: false,
+            demographics: { age: 0, gender: 'ไม่ระบุ', school: 'ไม่ระบุ', region: 'ไม่ระบุ', familyHistory: 'ไม่ระบุ', financialBurden: 'ไม่ระบุ' },
+            assessments: { dass21: { depression: 0, anxiety: 0, stress: 0 }, cdRisc: 0 }
+          });
+        }
+      });
+      return [...prevStudents, ...studentsToAdd];
     });
   };
 
@@ -122,6 +258,98 @@ export default function App() {
     setLogs([]); setAssessments([]); setStudents([]); setSelectedStudent('');
     setUploadStatus('รีเซ็ตข้อมูลกราฟและรายชื่อทั้งหมดกลับเป็นศูนย์เรียบร้อยแล้ว'); 
     setShowConfirmReset(false);
+  };
+
+  // --- DOWNLOAD TEMPLATES ---
+  const downloadTemplate = () => {
+    let header = ""; let example = ""; let filename = "";
+    // ใช้ BOM เพื่อให้เปิดใน Excel และอ่านภาษาไทยได้ถูกต้องเสมอ
+    const BOM = "\uFEFF"; 
+
+    if (csvUploadType === 'daily') {
+      header = "studentId,date,week,self,buddy,command,fatigue,injury\n";
+      example = "101,2026-05-12,1,1,1,1,2,0\n102,2026-05-12,1,3,2,2,8,0\n";
+      filename = "Template_DailyLogs.csv";
+    } else if (csvUploadType === 'demographic') {
+      header = "studentId,name,room,age,gender,region,school,familyHistory,financialBurden\n";
+      example = "101,นรม. กรกฎ (ใส่ชื่อจริง),101,18,ชาย,กทม.,เตรียมอุดมศึกษา,ไม่มี,ไม่มี\n102,นรม. ขจร (ใส่ชื่อจริง),102,19,ชาย,ภาคเหนือ,สวนกุหลาบวิทยาลัย,มี(ซึมเศร้า),สูง\n";
+      filename = "Template_Demographics.csv";
+    } else if (csvUploadType === 'assessment') {
+      header = "studentId,week,dass_d,dass_a,dass_s,cd_risc,drawing_note\n";
+      example = "101,0,2,4,6,85,วาดภาพปกติ\n102,4,14,10,18,,ไม่ให้ความร่วมมือ\n";
+      filename = "Template_Assessments.csv";
+    }
+
+    const blob = new Blob([BOM + header + example], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click(); document.body.removeChild(link);
+  };
+
+  // --- EXPORT MASTER DATA (RESEARCH READY) ---
+  const handleExportMasterData = () => {
+    let csv = "\uFEFF"; 
+    csv += "Student_ID,Name,Room,Age,Gender,Region,School,Family_History,Financial_Burden,Baseline_Risk,Date,Week,Self_Color,Buddy_Color,Command_Color,Fatigue,Injury,DASS_Depression,DASS_Anxiety,DASS_Stress,CD_RISC,Drawing_Note\n";
+
+    const assessMap = {};
+    assessments.forEach(a => {
+      assessMap[`${a.studentId}_${a.week}`] = a;
+    });
+
+    const allRows = [];
+
+    students.forEach(student => {
+      const sLogs = logs.filter(l => l.studentId === student.id);
+      const sAssess = assessments.filter(a => a.studentId === student.id);
+      
+      const weeks = new Set([...sLogs.map(l => l.week), ...sAssess.map(a => a.week)]);
+      
+      if (weeks.size === 0) {
+         allRows.push({ ...student, date: '', week: '', log: null, assess: null });
+      } else {
+         if (sLogs.length > 0) {
+           sLogs.forEach(log => {
+              const assess = assessMap[`${student.id}_${log.week}`] || null;
+              allRows.push({ ...student, date: log.date, week: log.week, log, assess });
+           });
+         }
+         sAssess.forEach(assess => {
+            const hasLogForWeek = sLogs.some(l => l.week === assess.week);
+            if (!hasLogForWeek) {
+               allRows.push({ ...student, date: `Wk ${assess.week}`, week: assess.week, log: null, assess });
+            }
+         });
+      }
+    });
+
+    allRows.forEach(row => {
+       const dem = row.demographics || {};
+       const l = row.log || {};
+       const a = row.assess || {};
+       
+       const rowData = [
+         row.id, row.name, row.room, dem.age, dem.gender, dem.region, dem.school, dem.familyHistory, dem.financialBurden, row.baseline,
+         row.date, row.week,
+         l.self, l.buddy, l.command, l.fatigue, l.injury !== undefined ? l.injury : '',
+         a.dass_d !== null && a.dass_d !== undefined ? a.dass_d : '', 
+         a.dass_a !== null && a.dass_a !== undefined ? a.dass_a : '', 
+         a.dass_s !== null && a.dass_s !== undefined ? a.dass_s : '', 
+         a.cd_risc !== null && a.cd_risc !== undefined ? a.cd_risc : '', 
+         a.drawing_note
+       ];
+       
+       csv += rowData.map(escapeCSV).join(",") + "\n";
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', `Sentinel_Research_MasterData_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click(); 
+    document.body.removeChild(link);
   };
 
   // --- DEMO DATA GENERATOR ---
@@ -132,27 +360,27 @@ export default function App() {
       const isHighRisk = Math.random() > 0.8;
       demoStudents.push({
         id: sid, name: `นรม. สมมติ ${sid}`, room: i%2===0?'101':'102', baseline: isHighRisk?'High':'Low', tag: '', isUnderCare: isHighRisk,
-        demographics: { age: 18 + Math.floor(Math.random()*4), gender: 'ชาย', school: 'มัธยมปลาย', region: i%3===0?'กทม.':'ต่างจังหวัด', familyHistory: isHighRisk?'มีประวัติ':'ไม่มี', financialBurden: isHighRisk?'สูง':'ไม่มี' }
+        demographics: { age: 18 + Math.floor(Math.random()*4), gender: 'ชาย', school: 'มัธยมปลาย', region: i%3===0?'กทม.':'ต่างจังหวัด', familyHistory: isHighRisk?'มี(ซึมเศร้า)':'ไม่มี', financialBurden: isHighRisk?'สูง':'ไม่มี' }
       });
 
-      // 16 Weeks Assessments
       [0, 4, 8, 16].forEach(wk => {
         let baseStress = isHighRisk ? 14 : 6;
-        let stress = Math.max(0, baseStress + (Math.random()*10 - 5) + (wk===8 ? 6 : 0) - (wk===16 ? 4 : 0)); // Wk 8 พีค, Wk 16 ลง
-        let cdRisc = Math.max(0, Math.min(100, (isHighRisk ? 40 : 70) + (wk*1.5) + (Math.random()*10 - 5))); // ภูมิคุ้มกันใจค่อยๆเพิ่ม
+        let stress = Math.max(0, baseStress + (Math.random()*10 - 5) + (wk===8 ? 6 : 0) - (wk===16 ? 4 : 0)); 
+        let cdRisc = Math.max(0, Math.min(100, (isHighRisk ? 40 : 70) + (wk*1.5) + (Math.random()*10 - 5))); 
         
         if (wk === 0 || wk === 4 || wk === 8 || wk === 16) {
           demoAssess.push({ id: Date.now()+Math.random(), studentId: sid, week: wk, dass_d: Math.round(stress*0.8), dass_a: Math.round(stress*0.9), dass_s: Math.round(stress), cd_risc: (wk===0||wk===8||wk===16)?Math.round(cdRisc):null, drawing_note: wk===0?'วาดภาพปกติ':'' });
         }
       });
 
-      // Daily Logs (Sample 1 per week for simplicity in demo)
       for(let w=1; w<=16; w++) {
         let mental = isHighRisk ? (w>=6 && w<=10 ? 3 : 2) : (w>=7 && w<=9 ? 2 : 1);
-        demoLogs.push({ id: Date.now()+Math.random(), studentId: sid, date: `2026-05-${w.toString().padStart(2,'0')}`, week: w, self: mental, buddy: mental, command: mental, fatigue: Math.floor(Math.random()*5)+ (w>=6&&w<=10?4:1), injury: 0 });
+        demoLogs.push({ id: Date.now()+Math.random(), studentId: sid, date: `2026-05-${(w+10).toString().padStart(2,'0')}`, week: w, self: mental, buddy: mental, command: mental, fatigue: Math.floor(Math.random()*5)+ (w>=6&&w<=10?4:1), injury: 0 });
       }
     }
     setStudents(demoStudents); setLogs(demoLogs); setAssessments(demoAssess);
+    
+    if (demoLogs.length > 0) setHeatmapDate(demoLogs[demoLogs.length-1].date);
     setUploadStatus('โหลดข้อมูลจำลอง 16 สัปดาห์เรียบร้อยแล้ว');
   };
 
@@ -161,10 +389,6 @@ export default function App() {
     const map = {}; logs.forEach(log => { if (!map[log.studentId] || new Date(log.date) > new Date(map[log.studentId].date)) map[log.studentId] = log; });
     return map;
   }, [logs]);
-
-  const studentsWithLatestStatus = useMemo(() => {
-    return students.map(s => ({ ...s, currentStatus: latestLogs[s.id] || { self: 0, buddy: 0, command: 0, fatigue: 0, injury: 0 } }));
-  }, [students, latestLogs]);
 
   // Overall Population Trend (Weekly)
   const populationWeeklyTrend = useMemo(() => {
@@ -206,7 +430,6 @@ export default function App() {
 
   // --- RENDERERS ---
   const renderOverview = () => {
-    // Pie data logic for current status overview
     const overallStats = { 1: 0, 2: 0, 3: 0, 4: 0, injury: 0, total: students.length };
     Object.values(latestLogs).forEach(log => {
       const maxMental = Math.max(log.self, log.buddy, log.command);
@@ -275,20 +498,20 @@ export default function App() {
                         return (
                           <div className="bg-white p-3 border shadow rounded text-sm">
                             <p className="font-bold mb-1">{label}</p>
-                            {payload.map((entry, idx) => (
+                            {payload.map((entry, idx) => entry.value?.mean !== null ? (
                               <p key={idx} style={{color: entry.color}}>
                                 {entry.name}: {entry.value?.mean} (SD: {entry.value?.sd})
                               </p>
-                            ))}
+                            ) : null)}
                           </div>
                         );
                       }
                       return null;
                     }} />
                     <Legend />
-                    <Line type="monotone" dataKey="self" name="Self" stroke="#3b82f6" strokeWidth={2} dot={{r:3}} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="buddy" name="Buddy" stroke="#10b981" strokeWidth={2} dot={{r:3}} />
-                    <Line type="monotone" dataKey="command" name="Command" stroke="#f59e0b" strokeWidth={2} dot={{r:3}} />
+                    <Line type="monotone" dataKey="self" name="Self" stroke="#3b82f6" strokeWidth={2} dot={{r:3}} activeDot={{ r: 6 }} connectNulls />
+                    <Line type="monotone" dataKey="buddy" name="Buddy" stroke="#10b981" strokeWidth={2} dot={{r:3}} connectNulls />
+                    <Line type="monotone" dataKey="command" name="Command" stroke="#f59e0b" strokeWidth={2} dot={{r:3}} connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
               ) : <div className="flex justify-center items-center h-full text-slate-400">ยังไม่มีข้อมูล</div>}
@@ -333,14 +556,38 @@ export default function App() {
     );
   }
 
-  // --- RENDERING HEATMAP TAB ---
+  // --- RENDERING HEATMAP TAB (WITH DATE PICKER) ---
   const renderHeatmap = () => {
     if (students.length === 0) return <div className="text-center p-12 text-slate-500">ไม่พบข้อมูล กรุณานำเข้าข้อมูลก่อน</div>;
-    const rooms = [...new Set(studentsWithLatestStatus.map(s => s.room))];
+    
+    // กรอง Log ตามวันที่เลือกเพื่อมาทำ Heatmap ของวันนั้นๆ
+    const logsForDate = logs.filter(l => l.date === heatmapDate);
+    const heatmapLogMap = {};
+    logsForDate.forEach(l => heatmapLogMap[l.studentId] = l);
+    
+    const studentsWithHeatmapStatus = students.map(s => ({
+      ...s, currentStatus: heatmapLogMap[s.id] || { self: 0, buddy: 0, command: 0, fatigue: 0, injury: 0 }
+    }));
+
+    // ดึงรายชื่อห้องทั้งหมดที่ไม่ใช่ค่าว่างมาเรียง
+    const rooms = [...new Set(studentsWithHeatmapStatus.map(s => s.room))].filter(Boolean).sort();
     
     return (
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-        <h3 className="text-lg font-bold mb-4 text-slate-800">Heatmap สภาวะจิตใจล่าสุดแยกตามห้องพัก</h3>
+        <div className="flex flex-col md:flex-row justify-between md:items-center mb-6 border-b pb-4">
+          <h3 className="text-lg font-bold text-slate-800">Heatmap สภาวะจิตใจรายห้องพัก</h3>
+          <div className="flex items-center mt-3 md:mt-0 bg-slate-50 p-2 rounded-lg border border-slate-200">
+            <Calendar size={18} className="text-slate-500 mr-2" />
+            <label className="text-sm font-bold text-slate-700 mr-2">เลือกวันที่ดูข้อมูล:</label>
+            <input 
+              type="date" 
+              className="bg-white border rounded px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              value={heatmapDate}
+              onChange={(e) => setHeatmapDate(e.target.value)}
+            />
+          </div>
+        </div>
+
         {rooms.map(room => (
           <div key={room} className="mb-8">
             <h4 className="text-md font-semibold mb-3 text-slate-600 border-b pb-2">ห้องพัก: {room}</h4>
@@ -349,23 +596,23 @@ export default function App() {
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
                     <th className="p-3 w-16">ID</th><th className="p-3 w-48">ชื่อ-สกุล</th>
-                    <th className="p-3 text-center">Self<br/><span className="text-xs font-normal text-slate-400">(ล่าสุด)</span></th>
-                    <th className="p-3 text-center">Buddy<br/><span className="text-xs font-normal text-slate-400">(ล่าสุด)</span></th>
-                    <th className="p-3 text-center">Command<br/><span className="text-xs font-normal text-slate-400">(ล่าสุด)</span></th>
+                    <th className="p-3 text-center">Self<br/><span className="text-[10px] font-normal text-slate-400">({heatmapDate})</span></th>
+                    <th className="p-3 text-center">Buddy<br/><span className="text-[10px] font-normal text-slate-400">({heatmapDate})</span></th>
+                    <th className="p-3 text-center">Command<br/><span className="text-[10px] font-normal text-slate-400">({heatmapDate})</span></th>
                     <th className="p-3 text-center">Fatigue</th><th className="p-3 text-center">ป่วย/เจ็บ</th><th className="p-3">Alert Score</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {studentsWithLatestStatus.filter(s => s.room === room).map(s => {
+                  {studentsWithHeatmapStatus.filter(s => s.room === room).map(s => {
                     const hasData = s.currentStatus.self > 0;
                     return (
                     <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50">
                       <td className="p-3 font-medium text-slate-500">{s.id}</td><td className="p-3">{s.name}</td>
-                      <td className="p-3"><div className={`w-full h-8 rounded ${!hasData && 'bg-slate-200'}`} style={{backgroundColor: COLORS[s.currentStatus.self]}}></div></td>
-                      <td className="p-3"><div className={`w-full h-8 rounded ${!hasData && 'bg-slate-200'}`} style={{backgroundColor: COLORS[s.currentStatus.buddy]}}></div></td>
-                      <td className="p-3"><div className={`w-full h-8 rounded ${!hasData && 'bg-slate-200'}`} style={{backgroundColor: COLORS[s.currentStatus.command]}}></div></td>
+                      <td className="p-3"><div className={`w-full h-8 rounded ${!hasData ? 'bg-slate-100 border border-slate-200' : ''}`} style={hasData ? {backgroundColor: COLORS[s.currentStatus.self]} : {}}></div></td>
+                      <td className="p-3"><div className={`w-full h-8 rounded ${!hasData ? 'bg-slate-100 border border-slate-200' : ''}`} style={hasData ? {backgroundColor: COLORS[s.currentStatus.buddy]} : {}}></div></td>
+                      <td className="p-3"><div className={`w-full h-8 rounded ${!hasData ? 'bg-slate-100 border border-slate-200' : ''}`} style={hasData ? {backgroundColor: COLORS[s.currentStatus.command]} : {}}></div></td>
                       <td className="p-3 text-center font-bold text-slate-700">{hasData ? `${s.currentStatus.fatigue}/10` : '-'}</td>
-                      <td className="p-3 text-center">{s.currentStatus.injury === 1 ? <span className="text-red-500 font-bold">Yes</span> : <span className="text-slate-300">-</span>}</td>
+                      <td className="p-3 text-center">{hasData ? (s.currentStatus.injury === 1 ? <span className="text-red-500 font-bold">Yes</span> : <span className="text-slate-300">-</span>) : '-'}</td>
                       <td className="p-3">{getAlertBadge(s.currentStatus)}</td>
                     </tr>
                   )})}
@@ -403,6 +650,7 @@ export default function App() {
             <div>
               <h4 className="font-bold text-slate-800 mb-4 border-b pb-2 flex items-center"><User size={18} className="mr-2"/> ประวัติพื้นฐาน (Demographics)</h4>
               <ul className="space-y-2 text-sm text-slate-600">
+                <li className="flex justify-between"><span>ห้องพัก:</span> <span className="font-bold text-slate-800">{studentInfo.room}</span></li>
                 <li className="flex justify-between"><span>อายุ/เพศ:</span> <span className="font-bold">{studentInfo.demographics.age||'-'} / {studentInfo.demographics.gender}</span></li>
                 <li className="flex justify-between"><span>โรงเรียน:</span> <span>{studentInfo.demographics.school}</span></li>
                 <li className="flex justify-between"><span>ภูมิลำเนา:</span> <span>{studentInfo.demographics.region}</span></li>
@@ -462,16 +710,22 @@ export default function App() {
 
   const renderDataEntry = () => (
     <div className="max-w-5xl mx-auto space-y-6">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center">
-        <div>
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between">
+        <div className="mb-4 md:mb-0">
           <h3 className="text-xl font-bold text-blue-800 flex items-center"><Database className="mr-2" /> ศูนย์จัดการข้อมูล (Data Center)</h3>
           <p className="text-sm text-slate-500 mt-1">คีย์ข้อมูลเข้า หรือ ล้างข้อมูลระบบ</p>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex flex-wrap gap-2">
+          {/* ปุ่มส่งออกข้อมูลเพิ่มใหม่ตรงนี้ */}
+          <button onClick={handleExportMasterData} className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-4 py-2 rounded-lg text-sm font-bold flex items-center transition border border-transparent hover:border-emerald-200">
+            <Download size={16} className="mr-2"/> ส่งออกข้อมูลวิจัย (Export)
+          </button>
+          
           <button onClick={loadDemoData} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-2 rounded-lg text-sm font-bold flex items-center transition">
             <Activity size={16} className="mr-2"/> โหลดข้อมูลจำลอง (Demo)
           </button>
-          <button onClick={() => setShowConfirmReset(true)} className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg text-sm font-bold flex items-center transition">
+          
+          <button onClick={() => setShowConfirmReset(true)} className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg text-sm font-bold flex items-center transition border border-transparent hover:border-red-200">
             <Trash2 size={16} className="mr-2"/> ล้างข้อมูลทั้งหมด
           </button>
         </div>
@@ -488,6 +742,63 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* BULK UPLOAD SECTION */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative">
+        <div className="border-b pb-4 mb-6 flex flex-col md:flex-row md:items-center justify-between">
+          <div>
+            <h3 className="text-xl font-bold text-blue-800 flex items-center">
+              <UploadCloud className="mr-2" /> นำเข้าข้อมูลแบบกลุ่ม (CSV Upload)
+            </h3>
+            <p className="text-sm text-slate-500 mt-1">อัปโหลดไฟล์ .csv ที่ได้จากการกรอกใน Excel</p>
+          </div>
+          <div className="mt-4 md:mt-0">
+            <label className="text-sm font-bold text-slate-700 mr-2">เลือกหมวดหมู่ไฟล์:</label>
+            <select 
+              className="bg-blue-50 border border-blue-200 text-blue-800 font-bold p-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              value={csvUploadType}
+              onChange={(e) => setCsvUploadType(e.target.value)}
+            >
+              <option value="daily">1. บันทึกรายวัน (4 สี)</option>
+              <option value="demographic">2. ประวัติพื้นฐาน (Demographics)</option>
+              <option value="assessment">3. แบบประเมินจิตวิทยา (Assessments)</option>
+            </select>
+          </div>
+        </div>
+        
+        <div className="space-y-6">
+          <div className="p-6 border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-xl text-center">
+            <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+            <button onClick={() => fileInputRef.current?.click()} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 inline-flex items-center">
+              <UploadCloud className="mr-2" size={20} /> คลิกเพื่อเลือกไฟล์ .CSV
+            </button>
+            <p className="text-xs text-slate-500 mt-3">* ข้อมูลจะถูกดึงเข้าสู่ระบบและอัปเดตกราฟแบบ Real-time ทันที</p>
+          </div>
+
+          {uploadStatus && (
+            <div className={`p-3 rounded-lg text-sm font-medium flex justify-between items-center ${uploadStatus.includes('สำเร็จ') ? 'bg-green-100 text-green-700' : uploadStatus.includes('รีเซ็ต') ? 'bg-slate-100 text-slate-600' : 'bg-orange-100 text-orange-700'}`}>
+              <span>{uploadStatus}</span>
+              <button onClick={() => setUploadStatus('')} className="hover:bg-black/10 p-1 rounded"><X size={14}/></button>
+            </div>
+          )}
+
+          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+            <h4 className="font-bold text-slate-700 text-sm mb-2 flex items-center justify-between">
+              รูปแบบโครงสร้างไฟล์ (Format) ของหมวด {csvUploadType === 'daily' ? 'บันทึกรายวัน' : csvUploadType === 'demographic' ? 'ประวัติพื้นฐาน' : 'แบบประเมินจิตวิทยา'}
+              <button onClick={downloadTemplate} className="text-blue-600 hover:text-blue-800 text-xs flex items-center bg-blue-100 hover:bg-blue-200 px-3 py-1.5 rounded-lg transition font-bold">
+                <Download size={14} className="mr-1"/> โหลด Template Excel ไปใช้งาน
+              </button>
+            </h4>
+            <div className="overflow-x-auto bg-white p-3 rounded border">
+              <code className="text-xs text-slate-600 whitespace-pre">
+                {csvUploadType === 'daily' && "studentId,date,week,self,buddy,command,fatigue,injury\n101,2026-05-12,1,1,1,1,2,0\n102,2026-05-12,1,3,2,2,8,0"}
+                {csvUploadType === 'demographic' && "studentId,name,room,age,gender,region,school,familyHistory,financialBurden\n101,นรม. กรกฎ,101,18,ชาย,กทม.,เตรียมอุดม,ไม่มี,ไม่มี\n102,นรม. ขจร,102,19,ชาย,ภาคเหนือ,ปริ้นส์,มี(ซึมเศร้า),สูง"}
+                {csvUploadType === 'assessment' && "studentId,week,dass_d,dass_a,dass_s,cd_risc,drawing_note\n101,0,2,4,6,85,วาดภาพปกติ\n102,4,14,10,18,,ไม่ให้ความร่วมมือ"}
+              </code>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* MANUAL ENTRY WITH TABS */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -520,6 +831,10 @@ export default function App() {
                 <div><label className="block text-xs font-bold mb-1">Buddy</label><select className="w-full p-2 border rounded" value={dailyForm.buddy} onChange={(e)=>setDailyForm({...dailyForm,buddy:e.target.value})}><option value="1">1-เขียว</option><option value="2">2-เหลือง</option><option value="3">3-ส้ม</option><option value="4">4-แดง</option></select></div>
                 <div><label className="block text-xs font-bold mb-1">Command</label><select className="w-full p-2 border rounded" value={dailyForm.command} onChange={(e)=>setDailyForm({...dailyForm,command:e.target.value})}><option value="1">1-เขียว</option><option value="2">2-เหลือง</option><option value="3">3-ส้ม</option><option value="4">4-แดง</option></select></div>
               </div>
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border">
+                <div><label className="block text-xs font-bold mb-1">ระดับความล้า (1-10)</label><input type="number" min="1" max="10" className="w-full p-2 border rounded" value={dailyForm.fatigue} onChange={(e)=>setDailyForm({...dailyForm,fatigue:e.target.value})} /></div>
+                <div><label className="block text-xs font-bold mb-1">เจ็บป่วย/งดฝึก</label><select className="w-full p-2 border rounded" value={dailyForm.injury} onChange={(e)=>setDailyForm({...dailyForm,injury:e.target.value})}><option value="0">ปกติ</option><option value="1">เจ็บป่วย/งด</option></select></div>
+              </div>
               <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">บันทึกข้อมูลรายวัน</button>
             </form>
           )}
@@ -527,9 +842,11 @@ export default function App() {
           {/* TAB 2: DEMOGRAPHICS */}
           {entrySubTab === 'demographic' && (
             <form onSubmit={handleDemoSubmit} className="space-y-5">
-              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm p-3 rounded-lg">* ข้อมูลส่วนนี้ควรกรอกเพียงครั้งแรกก่อนเริ่มการฝึก เพื่อใช้เป็น Baseline ทางสถิติ</div>
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm p-3 rounded-lg">* ข้อมูลส่วนนี้ควรกรอกเพียงครั้งแรกก่อนเริ่มการฝึก เพื่อใช้เป็น Baseline ทางสถิติ และการจัดกลุ่มห้องพัก</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div><label className="block text-sm font-bold text-slate-700 mb-1">รหัสนักเรียน (ID)</label><input type="text" className="w-full p-2 border rounded-lg bg-slate-50" value={demoForm.studentId} onChange={(e) => setDemoForm({...demoForm, studentId: e.target.value})} placeholder="เช่น 101" required /></div>
+                <div><label className="block text-sm font-bold text-slate-700 mb-1">ชื่อ-สกุล</label><input type="text" className="w-full p-2 border rounded-lg bg-slate-50" value={demoForm.name} onChange={(e) => setDemoForm({...demoForm, name: e.target.value})} placeholder="เช่น นรม. กรกฎ สุขใจ" required /></div>
+                <div><label className="block text-sm font-bold text-slate-700 mb-1">ห้องพัก</label><input type="text" className="w-full p-2 border rounded-lg bg-slate-50" value={demoForm.room} onChange={(e) => setDemoForm({...demoForm, room: e.target.value})} placeholder="เช่น 101, 102" required /></div>
                 <div><label className="block text-sm font-bold text-slate-700 mb-1">อายุ (ปี)</label><input type="number" className="w-full p-2 border rounded-lg bg-slate-50" value={demoForm.age} onChange={(e) => setDemoForm({...demoForm, age: e.target.value})} /></div>
                 <div><label className="block text-sm font-bold text-slate-700 mb-1">ภูมิลำเนา (ภาค)</label><input type="text" className="w-full p-2 border rounded-lg bg-slate-50" value={demoForm.region} onChange={(e) => setDemoForm({...demoForm, region: e.target.value})} /></div>
                 <div><label className="block text-sm font-bold text-slate-700 mb-1">โรงเรียนที่จบ</label><input type="text" className="w-full p-2 border rounded-lg bg-slate-50" value={demoForm.school} onChange={(e) => setDemoForm({...demoForm, school: e.target.value})} /></div>
@@ -624,7 +941,7 @@ export default function App() {
               {activeTab === 'overview' && 'ภาพรวมสุขภาพจิต นรม. (Population Trends)'}
               {activeTab === 'heatmap' && 'สถานะสุขภาพจิตแยกตามห้องพัก (Heatmap)'}
               {activeTab === 'individual' && 'การติดตามและวิเคราะห์แนวโน้มรายบุคคล'}
-              {activeTab === 'entry' && 'ศูนย์จัดการข้อมูลประชากรและแบบประเมิน'}
+              {activeTab === 'entry' && 'ศูนย์จัดการข้อมูล (Data Center)'}
             </h2>
             <p className="text-slate-500 text-sm mt-1 flex items-center">
               <Clock size={14} className="mr-1" /> ประมวลผลกราฟอัตโนมัติ

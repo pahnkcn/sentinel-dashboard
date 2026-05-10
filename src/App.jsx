@@ -1,17 +1,17 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Brush
 } from 'recharts';
 import { 
-  LayoutDashboard, Users, User, AlertTriangle, Activity, Clock, HeartPulse, ShieldCheck, UploadCloud, Download, BookOpen, Database, Calendar
+  LayoutDashboard, Users, User, AlertTriangle, Activity, Clock, HeartPulse, ShieldCheck, UploadCloud, Download, Trash2, X, BookOpen, Database, Calendar
 } from 'lucide-react';
 
 // ==========================================
 // FIREBASE CLOUD STORAGE CONFIGURATION
 // ==========================================
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, doc, setDoc, writeBatch, query, orderBy, limit } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBNNcFjfkIko-mN9zpATT_lD0FQuX5wDdA",
@@ -24,14 +24,8 @@ const firebaseConfig = {
   measurementId: "G-RLSQKNJY2G"
 };
 
-// Safely initialize Firebase (avoid re-init on hot reload)
-let app;
-try {
-  app = initializeApp(firebaseConfig);
-} catch (e) {
-  const { getApp } = require('firebase/app');
-  app = getApp();
-}
+// ใช้ getApps() ของ ES Module ป้องกัน Error Hot Reload (ปลอดภัย 100%)
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
 const db = getFirestore(app);
 
@@ -76,23 +70,11 @@ const deleteInBatches = async (collectionName, items) => {
   }
 };
 
-// ==========================================
-// FIX #1: downloadTemplate was called but never defined
-// ==========================================
 const downloadTemplate = (type) => {
   const templates = {
-    daily: {
-      filename: 'template_daily.csv',
-      content: 'studentId,date,week,self,buddy,command,fatigue,injury\n001,2026-05-12,1,1,1,1,2,0\n002,2026-05-12,1,2,1,1,3,0'
-    },
-    demographic: {
-      filename: 'template_demographic.csv',
-      content: 'id,name,room,age,gender,region,school,familyHistory,financialBurden\n001,นรม. ตัวอย่าง,101,19,ชาย,กทม.,มัธยมปลาย,ไม่มี,ไม่มี'
-    },
-    assessment: {
-      filename: 'template_assessment.csv',
-      content: 'studentId,week,dass_d,dass_a,dass_s,cd_risc,drawing_note\n001,0,6,5,8,75,วาดภาพปกติ'
-    }
+    daily: { filename: 'template_daily.csv', content: 'studentId,date,week,self,buddy,command,fatigue,injury\n001,2026-05-12,1,1,1,1,2,0\n002,2026-05-12,1,2,1,1,3,0' },
+    demographic: { filename: 'template_demographic.csv', content: 'studentId,name,room,age,gender,region,school,familyHistory,financialBurden\n001,นรม. กรกฎ,101,19,ชาย,กทม.,มัธยมปลาย,ไม่มี,ไม่มี' },
+    assessment: { filename: 'template_assessment.csv', content: 'studentId,week,dass_d,dass_a,dass_s,cd_risc,drawing_note\n001,0,6,5,8,75,วาดภาพปกติ' }
   };
   const t = templates[type] || templates.daily;
   const blob = new Blob(['\uFEFF' + t.content], { type: 'text/csv;charset=utf-8;' });
@@ -104,11 +86,9 @@ const downloadTemplate = (type) => {
   document.body.removeChild(link);
 };
 
-// ==========================================
-// LOADING SKELETON
-// ==========================================
+// UI: Skeleton Loading
 const Skeleton = ({ className = '' }) => (
-  <div className={`animate-pulse bg-slate-200 rounded-xl ${className}`} />
+  <div className={`animate-pulse bg-slate-200/60 rounded-xl ${className}`} />
 );
 
 export default function App() {
@@ -116,69 +96,42 @@ export default function App() {
   const [entrySubTab, setEntrySubTab] = useState('daily');
 
   // ==========================================
-  // FIX #2: Split loading states per collection
-  // so UI renders immediately while data loads
+  // CLOUD STATE & LOADING MANAGEMENT
   // ==========================================
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [students, setStudents] = useState([]);
   const [logs, setLogs] = useState([]);
   const [assessments, setAssessments] = useState([]);
+  
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [loadingAssessments, setLoadingAssessments] = useState(true);
 
-  // Step 1: Authenticate
+  // Auth Listener
   useEffect(() => {
     signInAnonymously(auth).catch(err => console.error("Auth Failure:", err));
-    const unsub = onAuthStateChanged(auth, (u) => {
+    return onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthLoading(false);
     });
-    return unsub;
   }, []);
 
-  // Step 2: Subscribe to Firestore ONLY after auth resolves
-  // Each collection subscribes independently so partial data shows immediately
+  // Data Listeners
   useEffect(() => {
     if (!user) return;
-
-    const unsubStudents = onSnapshot(
-      collection(db, 'students'),
-      (snapshot) => {
-        setStudents(snapshot.docs.map(d => d.data()));
-        setLoadingStudents(false);
-      },
-      (error) => {
-        console.error("Firestore Students Error:", error);
-        setLoadingStudents(false);
-      }
-    );
-
-    const unsubLogs = onSnapshot(
-      collection(db, 'logs'),
-      (snapshot) => {
-        setLogs(snapshot.docs.map(d => d.data()));
-        setLoadingLogs(false);
-      },
-      (error) => {
-        console.error("Firestore Logs Error:", error);
-        setLoadingLogs(false);
-      }
-    );
-
-    const unsubAssessments = onSnapshot(
-      collection(db, 'assessments'),
-      (snapshot) => {
-        setAssessments(snapshot.docs.map(d => d.data()));
-        setLoadingAssessments(false);
-      },
-      (error) => {
-        console.error("Firestore Assessments Error:", error);
-        setLoadingAssessments(false);
-      }
-    );
-
+    const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
+      setStudents(snapshot.docs.map(d => d.data()));
+      setLoadingStudents(false);
+    });
+    const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
+      setLogs(snapshot.docs.map(d => d.data()));
+      setLoadingLogs(false);
+    });
+    const unsubAssessments = onSnapshot(collection(db, 'assessments'), (snapshot) => {
+      setAssessments(snapshot.docs.map(d => d.data()));
+      setLoadingAssessments(false);
+    });
     return () => { unsubStudents(); unsubLogs(); unsubAssessments(); };
   }, [user]);
 
@@ -197,11 +150,22 @@ export default function App() {
     if (students.length > 0 && !selectedStudent) setSelectedStudent(students[0].id);
   }, [students, selectedStudent]);
 
+  // --- LOGIC: ระบบอัปเดตข้อมูลโครงสร้างที่ปลอดภัย ---
   const ensureStudentExists = async (sid, demoData = null) => {
     const existing = students.find(s => s.id === sid);
     if (existing) {
       if (demoData) {
-        await setDoc(doc(db, 'students', sid), { ...existing, ...demoData, age: parseInt(demoData.age) || 0 });
+        const updated = {
+          ...existing,
+          name: demoData.name || existing.name,
+          room: demoData.room || existing.room,
+          demographics: {
+            ...existing.demographics,
+            ...demoData,
+            age: parseInt(demoData.age) || existing.demographics?.age || 0
+          }
+        };
+        await setDoc(doc(db, 'students', sid), updated);
       }
     } else {
       const nw = {
@@ -209,9 +173,15 @@ export default function App() {
         name: demoData?.name || `นรม. รหัส ${sid}`,
         room: demoData?.room || 'ไม่ระบุ',
         baseline: 'Medium', tag: '', isUnderCare: false,
-        demographics: demoData
-          ? { ...demoData, age: parseInt(demoData.age) || 0 }
-          : { age: 0, gender: 'ไม่ระบุ', school: 'ไม่ระบุ', region: 'ไม่ระบุ', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี' }
+        demographics: {
+          age: parseInt(demoData?.age) || 0,
+          gender: demoData?.gender || 'ไม่ระบุ',
+          school: demoData?.school || 'ไม่ระบุ',
+          region: demoData?.region || 'ไม่ระบุ',
+          familyHistory: demoData?.familyHistory || 'ไม่มี',
+          financialBurden: demoData?.financialBurden || 'ไม่มี'
+        },
+        assessments: { dass21: { depression: 0, anxiety: 0, stress: 0 }, cdRisc: 0 }
       };
       await setDoc(doc(db, 'students', sid), nw);
     }
@@ -261,12 +231,15 @@ export default function App() {
         const lines = evt.target.result.split('\n');
         const batch = writeBatch(db);
         let count = 0;
+        const sids = new Set(); 
+        
         for (let i = 1; i < lines.length; i++) {
           if (!lines[i].trim()) continue;
           const v = lines[i].split(',').map(x => x.trim());
           if (csvUploadType === 'daily' && v.length >= 8) {
             const id = `log_${v[0]}_${v[1]}`;
             batch.set(doc(db, 'logs', id), { id, studentId: v[0], date: v[1], week: parseInt(v[2]) || 1, self: parseInt(v[3]) || 1, buddy: parseInt(v[4]) || 1, command: parseInt(v[5]) || 1, fatigue: parseInt(v[6]) || 1, injury: parseInt(v[7]) || 0 });
+            sids.add(v[0]);
             count++;
           } else if (csvUploadType === 'demographic' && v.length >= 9) {
             batch.set(doc(db, 'students', v[0]), { id: v[0], name: v[1], room: v[2], demographics: { age: parseInt(v[3]) || 0, gender: v[4], region: v[5], school: v[6], familyHistory: v[7], financialBurden: v[8] }, baseline: 'Medium', tag: '', isUnderCare: false });
@@ -274,56 +247,102 @@ export default function App() {
           } else if (csvUploadType === 'assessment' && v.length >= 7) {
             const id = `assess_${v[0]}_${v[1]}`;
             batch.set(doc(db, 'assessments', id), { id, studentId: v[0], week: parseInt(v[1]) || 0, dass_d: v[2] ? parseInt(v[2]) : null, dass_a: v[3] ? parseInt(v[3]) : null, dass_s: v[4] ? parseInt(v[4]) : null, cd_risc: v[5] ? parseInt(v[5]) : null, drawing_note: v[6] || '' });
+            sids.add(v[0]);
             count++;
           }
         }
+
+        const existingIds = new Set(students.map(s => s.id));
+        sids.forEach(id => {
+          if (!existingIds.has(id)) {
+            batch.set(doc(db, 'students', id), {
+              id: id, name: `นรม. รหัส ${id}`, room: 'ไม่ระบุ', baseline: 'Medium', tag: '', isUnderCare: false,
+              demographics: { age: 0, gender: 'ไม่ระบุ', school: 'ไม่ระบุ', region: 'ไม่ระบุ', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี' },
+              assessments: { dass21: { depression: 0, anxiety: 0, stress: 0 }, cdRisc: 0 }
+            });
+          }
+        });
+
         await batch.commit();
-        setUploadStatus(`นำเข้าสำเร็จ ${count} รายการ`);
+        setUploadStatus(`✅ นำเข้าสำเร็จ ${count} รายการ`);
       } catch (err) {
         console.error(err);
-        setUploadStatus('เกิดข้อผิดพลาดในการอ่านไฟล์');
+        setUploadStatus('❌ เกิดข้อผิดพลาดในการอ่านไฟล์');
       }
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // --- LOGIC: ระบบลบและ Demo แบบเห็นผลชัดเจน 100% ---
   const handleResetData = async () => {
-    if (!user) return;
-    setUploadStatus('กำลังล้างข้อมูล Cloud...');
+    if (!user) { alert("รอเชื่อมต่อฐานข้อมูลสักครู่..."); return; }
+    setUploadStatus('⏳ กำลังล้างข้อมูลใน Cloud ให้ว่างเปล่า...');
     try {
       await deleteInBatches('logs', logs);
       await deleteInBatches('assessments', assessments);
       await deleteInBatches('students', students);
-      setUploadStatus('ล้างข้อมูลสำเร็จ');
+      setUploadStatus('✅ ล้างข้อมูลสำเร็จ!');
       setShowConfirmReset(false);
+      alert('ล้างข้อมูลออกจาก Cloud เสร็จสมบูรณ์แล้วครับ');
     } catch (e) {
-      setUploadStatus('ล้มเหลว: ' + e.message);
+      setUploadStatus('❌ ล้มเหลว: ' + e.message);
     }
   };
 
   const loadDemoData = async () => {
-    if (!user) return;
-    setUploadStatus('กำลังสร้าง Demo ขึ้น Cloud...');
-    const dS = []; const dL = []; const dA = [];
-    for (let i = 1; i <= 10; i++) {
-      const sid = i.toString().padStart(3, '0');
-      const rm = `10${Math.ceil(i / 2)}`;
-      dS.push({ id: sid, name: `นรม. สมมติ ${sid}`, room: rm, baseline: 'Medium', tag: '', isUnderCare: false, demographics: { age: 19, gender: 'ชาย', region: 'กทม.', school: 'มัธยมปลาย', familyHistory: 'ไม่มี', financialBurden: 'ไม่มี' } });
-      [0, 4, 8, 16].forEach(wk => dA.push({ id: `assess_${sid}_${wk}`, studentId: sid, week: wk, dass_d: 6, dass_a: 5, dass_s: 8, cd_risc: 75, drawing_note: 'วาดภาพปกติ' }));
-      for (let w = 1; w <= 16; w++) {
-        for (let d_idx = 0; d_idx < 7; d_idx++) {
-          let date = new Date(2026, 4, 12);
-          date.setDate(date.getDate() + ((w - 1) * 7) + d_idx);
-          const dStr = date.toISOString().split('T')[0];
-          dL.push({ id: `log_${sid}_${dStr}`, studentId: sid, date: dStr, week: w, self: 1, buddy: 1, command: 1, fatigue: 2, injury: 0 });
+    if (!user) { alert('รอเชื่อมต่อฐานข้อมูลสักครู่...'); return; }
+    
+    // โชว์แบนเนอร์แจ้งสถานะกำลังอัปโหลด เพื่อให้รู้ว่าปุ่มกดติดแล้ว
+    setUploadStatus('⏳ กำลังดันข้อมูลจำลอง 112 วันขึ้น Cloud (อาจใช้เวลา 3-5 วินาที)...');
+    
+    try {
+      const dS = []; const dL = []; const dA = [];
+      let lastDateForHeatmap = ''; // ตัวแปรเก็บวันที่สุดท้ายเพื่อย้ายปฏิทินตาม
+
+      for (let i = 1; i <= 10; i++) {
+        const sid = i.toString().padStart(3, '0');
+        const rm = `10${Math.ceil(i / 2)}`;
+        const isHighRisk = Math.random() > 0.8;
+        
+        dS.push({ id: sid, name: `นรม. สมมติ ${sid}`, room: rm, baseline: isHighRisk ? 'High' : 'Low', tag: '', isUnderCare: isHighRisk, demographics: { age: 18 + Math.floor(Math.random()*3), gender: 'ชาย', region: 'กทม.', school: 'มัธยมปลาย', familyHistory: isHighRisk?'มี(ซึมเศร้า)':'ไม่มี', financialBurden: isHighRisk?'สูง':'ไม่มี' } });
+        
+        [0, 4, 8, 16].forEach(wk => {
+          let baseStress = isHighRisk ? 14 : 6;
+          let stress = Math.max(0, baseStress + (Math.random()*10 - 5) + (wk===8 ? 6 : 0) - (wk===16 ? 4 : 0)); 
+          let cdRisc = Math.max(0, Math.min(100, (isHighRisk ? 40 : 70) + (wk*1.5) + (Math.random()*10 - 5)));
+          dA.push({ id: `assess_${sid}_${wk}`, studentId: sid, week: wk, dass_d: Math.round(stress*0.8), dass_a: Math.round(stress*0.9), dass_s: Math.round(stress), cd_risc: (wk===0||wk===8||wk===16)?Math.round(cdRisc):null, drawing_note: wk===0?'วาดภาพปกติ':'' });
+        });
+
+        for (let w = 1; w <= 16; w++) {
+          for (let d_idx = 0; d_idx < 7; d_idx++) {
+            let date = new Date(2026, 4, 12);
+            date.setDate(date.getDate() + ((w - 1) * 7) + d_idx);
+            const dStr = date.toISOString().split('T')[0];
+            lastDateForHeatmap = dStr;
+
+            let mental = isHighRisk ? (w>=6 && w<=10 ? 3 : 2) : (w>=7 && w<=9 ? 2 : 1);
+            if (Math.random() > 0.7) mental = Math.max(1, mental - 1);
+
+            dL.push({ id: `log_${sid}_${dStr}`, studentId: sid, date: dStr, week: w, self: mental, buddy: mental, command: mental, fatigue: Math.floor(Math.random()*5)+ (w>=6&&w<=10?4:1), injury: 0 });
+          }
         }
       }
+      
+      await commitInBatches('students', dS, 'id');
+      await commitInBatches('assessments', dA, 'id');
+      await commitInBatches('logs', dL, 'id');
+      
+      // อัปเดตปฏิทินใน Heatmap ให้อัตโนมัติ ป้องกันปัญหาดูแล้วหาข้อมูลไม่เจอ
+      if (lastDateForHeatmap) setHeatmapDate(lastDateForHeatmap);
+      
+      setUploadStatus('✅ โหลดข้อมูล Demo เสร็จสมบูรณ์! (ข้อมูล 112 วันถูกบันทึกแล้ว)');
+      alert('จำลองข้อมูลสำเร็จ! สามารถเปิดดูกราฟและ Heatmap ได้เลยครับ');
+    } catch (err) {
+      console.error(err);
+      setUploadStatus('❌ เกิดข้อผิดพลาดในการโหลด Demo');
+      alert('ล้มเหลว: ' + err.message);
     }
-    await commitInBatches('students', dS, 'id');
-    await commitInBatches('assessments', dA, 'id');
-    await commitInBatches('logs', dL, 'id');
-    setUploadStatus('โหลด Demo สำเร็จ');
   };
 
   const handleExportMasterData = () => {
@@ -346,6 +365,7 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  // --- ANALYTICS ---
   const populationTrend = useMemo(() => Array.from({ length: 16 }, (_, i) => {
     const w = i + 1;
     const wL = logs.filter(l => l.week === w);
@@ -369,7 +389,7 @@ export default function App() {
     const isLoading = loadingStudents || loadingLogs || loadingAssessments;
     const demoStats = {
       avgAge: students.length > 0 ? (students.filter(s => s.demographics?.age > 0).reduce((a, b) => a + (b.demographics?.age || 0), 0) / Math.max(1, students.filter(s => s.demographics?.age > 0).length)).toFixed(1) : 0,
-      familyRisk: students.filter(s => s.demographics?.familyHistory !== 'ไม่มี').length,
+      familyRisk: students.filter(s => s.demographics?.familyHistory && s.demographics.familyHistory !== 'ไม่มี').length,
       burdenRisk: students.filter(s => s.demographics?.financialBurden === 'สูง').length
     };
 
@@ -381,11 +401,11 @@ export default function App() {
             { label: 'บันทึกรายวัน (Logs)', value: logs.length, icon: Activity, bg: 'bg-rose-50', color: 'text-rose-600' },
             { label: 'แบบประเมิน (Assess)', value: assessments.length, icon: ShieldCheck, bg: 'bg-purple-50', color: 'text-purple-600' },
           ].map(({ label, value, icon: Icon, bg, color }) => (
-            <div key={label} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
+            <div key={label} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4 hover:shadow-md transition-shadow">
               <div className={`p-3 ${bg} ${color} rounded-xl`}><Icon size={24} /></div>
               <div>
-                <p className="text-sm font-medium opacity-60">{label}</p>
-                {isLoading ? <Skeleton className="h-8 w-16 mt-1" /> : <p className="text-2xl font-bold">{value}</p>}
+                <p className="text-sm font-bold text-slate-400 mb-1">{label}</p>
+                {isLoading ? <Skeleton className="h-8 w-16" /> : <p className="text-3xl font-black text-slate-800">{value}</p>}
               </div>
             </div>
           ))}
@@ -395,19 +415,19 @@ export default function App() {
           <h3 className="text-lg font-bold mb-4 flex items-center text-slate-800"><BookOpen className="mr-2 text-blue-500" size={20} /> Demographic & Baseline Data</h3>
           {loadingStudents ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Skeleton className="h-24" /><Skeleton className="h-24" />
+              <Skeleton className="h-28" /><Skeleton className="h-28" />
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-slate-50 p-4 rounded-xl">
-                <p className="text-sm font-bold text-slate-500 mb-2">โปรไฟล์ทั่วไป</p>
-                <p className="text-sm">อายุเฉลี่ย: <b>{demoStats.avgAge} ปี</b></p>
-                <p className="text-sm">นรม. ในคัดกรอง: <b>{students.length} นาย</b></p>
+              <div className="bg-slate-50/50 border border-slate-100 p-5 rounded-xl">
+                <p className="text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">โปรไฟล์ทั่วไป</p>
+                <div className="flex justify-between items-center mb-2"><span className="text-slate-600 font-medium">อายุเฉลี่ย</span><b className="text-slate-800">{demoStats.avgAge} ปี</b></div>
+                <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">นรม. ในระบบ</span><b className="text-slate-800">{students.length} นาย</b></div>
               </div>
-              <div className="bg-slate-50 p-4 rounded-xl">
-                <p className="text-sm font-bold text-slate-500 mb-2">ปัจจัยความเสี่ยง</p>
-                <p className="text-sm text-rose-600">ประวัติจิตเวชครอบครัว: <b>{demoStats.familyRisk} นาย</b></p>
-                <p className="text-sm text-rose-600">ภาระกังวลทางบ้านสูง: <b>{demoStats.burdenRisk} นาย</b></p>
+              <div className="bg-slate-50/50 border border-slate-100 p-5 rounded-xl">
+                <p className="text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">ปัจจัยความเสี่ยง</p>
+                <div className="flex justify-between items-center mb-2"><span className="text-slate-600 font-medium">ประวัติจิตเวชครอบครัว</span><b className="text-rose-600">{demoStats.familyRisk} นาย</b></div>
+                <div className="flex justify-between items-center"><span className="text-slate-600 font-medium">ภาระกังวลทางบ้านสูง</span><b className="text-rose-600">{demoStats.burdenRisk} นาย</b></div>
               </div>
             </div>
           )}
@@ -484,10 +504,10 @@ export default function App() {
           </div>
         </div>
         {loadingStudents || loadingLogs ? (
-          <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-32" />)}</div>
+          <div className="space-y-6">{[1, 2, 3].map(i => <Skeleton key={i} className="h-40" />)}</div>
         ) : rooms.length > 0 ? rooms.map(rm => (
           <div key={rm} className="mb-10">
-            <h4 className="text-lg font-bold mb-4 text-blue-700 bg-blue-50/50 inline-block px-4 py-1 rounded-full">ห้องพัก: {rm}</h4>
+            <h4 className="text-lg font-bold mb-4 text-blue-700 bg-blue-50/50 inline-block px-4 py-1 rounded-full border border-blue-100">ห้องพัก: {rm}</h4>
             <div className="overflow-x-auto rounded-xl border border-slate-100">
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50/80 text-slate-500">
@@ -498,7 +518,7 @@ export default function App() {
                     const st = m[s.id] || { self: 0, buddy: 0, command: 0, fatigue: 0 };
                     return (
                       <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition">
-                        <td className="p-4 text-slate-400">{s.id}</td>
+                        <td className="p-4 font-medium text-slate-400">{s.id}</td>
                         <td className="p-4 font-bold text-slate-700">{s.name}</td>
                         <td className="p-4"><div className="w-full h-8 rounded-lg shadow-inner" style={{ backgroundColor: COLORS[st.self] || '#f1f5f9' }}></div></td>
                         <td className="p-4"><div className="w-full h-8 rounded-lg shadow-inner" style={{ backgroundColor: COLORS[st.buddy] || '#f1f5f9' }}></div></td>
@@ -511,43 +531,43 @@ export default function App() {
               </table>
             </div>
           </div>
-        )) : <div className="text-center p-20 text-slate-400">ยังไม่มีข้อมูล นรม. ในระบบ</div>}
+        )) : <div className="text-center p-20 text-slate-400">ยังไม่มีข้อมูล นรม. ในระบบ หรือวันที่เลือกไม่มีข้อมูล</div>}
       </div>
     );
   };
 
   const renderIndividual = () => {
     const s = students.find(x => x.id === selectedStudent);
-    if (loadingStudents) return <div className="space-y-4"><Skeleton className="h-20" /><Skeleton className="h-64" /></div>;
-    if (!s) return <div className="p-12 text-center text-slate-400">กรุณาเลือกนักเรียนจากเมนู</div>;
+    if (loadingStudents) return <div className="space-y-6"><Skeleton className="h-24" /><Skeleton className="h-72" /></div>;
+    if (!s) return <div className="p-12 text-center text-slate-400 font-bold bg-white rounded-2xl border border-dashed border-slate-300">กรุณาเลือกนักเรียนจากเมนู</div>;
     const sL = logs.filter(l => l.studentId === selectedStudent).sort((a, b) => new Date(a.date) - new Date(b.date));
     const sA = assessments.filter(a => a.studentId === selectedStudent).sort((a, b) => a.week - b.week);
 
     return (
       <div className="space-y-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
-          <h3 className="text-xl font-bold">ผลวิเคราะห์: {s.name}</h3>
-          <select className="bg-slate-50 border rounded-xl px-4 py-2 font-bold outline-none" value={selectedStudent} onChange={(e) => setSelectedStudent(e.target.value)}>
+          <h3 className="text-xl font-bold">ผลวิเคราะห์: <span className="text-blue-600">{s.name}</span></h3>
+          <select className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 font-bold outline-none focus:ring-2 focus:ring-blue-500" value={selectedStudent} onChange={(e) => setSelectedStudent(e.target.value)}>
             {students.map(sx => <option key={sx.id} value={sx.id}>{sx.id} - {sx.name}</option>)}
           </select>
         </div>
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
-            <h4 className="font-bold border-b pb-2 text-blue-600">ข้อมูลพื้นฐาน</h4>
-            <div className="text-sm space-y-2">
-              <p>ห้องพัก: <b>{s.room}</b></p>
-              <p>ภูมิลำเนา: <b>{s.demographics?.region}</b></p>
-              <p>ภาระทางบ้าน: <b className={s.demographics?.financialBurden === 'สูง' ? 'text-rose-500' : ''}>{s.demographics?.financialBurden}</b></p>
-              <p>ประวัติจิตเวช: <b className={s.demographics?.familyHistory !== 'ไม่มี' ? 'text-rose-500' : ''}>{s.demographics?.familyHistory}</b></p>
+            <h4 className="font-bold border-b pb-3 text-blue-600 flex items-center"><User size={18} className="mr-2"/> ข้อมูลพื้นฐาน</h4>
+            <div className="text-sm space-y-3">
+              <div className="flex justify-between items-center"><span className="text-slate-500">ห้องพัก:</span><b className="text-slate-800">{s.room}</b></div>
+              <div className="flex justify-between items-center"><span className="text-slate-500">ภูมิลำเนา:</span><b className="text-slate-800">{s.demographics?.region || '-'}</b></div>
+              <div className="flex justify-between items-center"><span className="text-slate-500">ภาระทางบ้าน:</span><b className={s.demographics?.financialBurden === 'สูง' ? 'text-rose-500' : 'text-slate-800'}>{s.demographics?.financialBurden || '-'}</b></div>
+              <div className="flex justify-between items-center"><span className="text-slate-500">ประวัติจิตเวช:</span><b className={s.demographics?.familyHistory !== 'ไม่มี' ? 'text-rose-500' : 'text-slate-800'}>{s.demographics?.familyHistory || '-'}</b></div>
             </div>
-            <div className="pt-4 border-t">
-              <h4 className="font-bold text-slate-800 mb-2">Note (Drawing Test)</h4>
-              <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-lg">"{sA.find(x => x.week === 0)?.drawing_note || 'ไม่มีข้อมูล'}"</p>
+            <div className="pt-5 border-t mt-4">
+              <h4 className="font-bold text-slate-800 mb-2 flex items-center"><ShieldCheck size={18} className="mr-2 text-purple-500"/> Note (Drawing Test)</h4>
+              <p className="text-sm text-slate-600 italic bg-slate-50 p-4 rounded-xl border border-slate-100">"{sA.find(x => x.week === 0)?.drawing_note || 'ไม่มีข้อมูล'}"</p>
             </div>
           </div>
           <div className="col-span-1 xl:col-span-2 space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <h4 className="font-bold mb-4">4 Colors Trend (รายวัน)</h4>
+              <h4 className="font-bold mb-6 text-slate-800 flex items-center"><Activity size={18} className="mr-2 text-blue-500"/> 4 Colors Trend (รายวัน)</h4>
               {loadingLogs ? <Skeleton className="h-56" /> : (
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
@@ -566,13 +586,13 @@ export default function App() {
               )}
             </div>
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <h4 className="font-bold mb-4">Psychological Assessments (รายสัปดาห์)</h4>
+              <h4 className="font-bold mb-6 text-slate-800 flex items-center"><BookOpen size={18} className="mr-2 text-purple-500"/> Psychological Assessments</h4>
               {loadingAssessments ? <Skeleton className="h-56" /> : (
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={sA}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={0} />
+                      <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={0} tickFormatter={v => `Wk ${v}`} />
                       <YAxis yAxisId="left" domain={[0, 42]} />
                       <YAxis yAxisId="right" orientation="right" domain={[0, 100]} />
                       <RechartsTooltip />
@@ -591,6 +611,14 @@ export default function App() {
 
   const renderDataEntry = () => (
     <div className="max-w-5xl mx-auto space-y-8 pb-20">
+      
+      {/* Banner สำหรับแสดงสถานะแบบเห็นชัดเจน */}
+      {uploadStatus && (
+        <div className={`p-4 rounded-xl text-center font-bold text-sm shadow-sm transition-all ${uploadStatus.includes('สำเร็จ') ? 'bg-emerald-100 text-emerald-800' : uploadStatus.includes('⏳') ? 'bg-orange-100 text-orange-800 animate-pulse' : 'bg-red-100 text-red-800'}`}>
+          {uploadStatus}
+        </div>
+      )}
+
       <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h3 className="text-2xl font-black text-blue-900 flex items-center"><Database className="mr-3 text-blue-500" /> Data Center</h3>
@@ -598,8 +626,8 @@ export default function App() {
         </div>
         <div className="flex flex-wrap gap-3">
           <button onClick={handleExportMasterData} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center shadow-lg transition-all"><Download size={18} className="mr-2" /> Export CSV</button>
-          <button onClick={loadDemoData} className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-indigo-200 transition-all">Load Demo</button>
-          <button onClick={() => setShowConfirmReset(true)} className="bg-rose-50 text-rose-700 hover:bg-rose-100 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-rose-200 transition-all">Reset Cloud</button>
+          <button onClick={loadDemoData} className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-indigo-200 transition-all"><Activity size={18} className="mr-2" /> Load Demo Data</button>
+          <button onClick={() => setShowConfirmReset(true)} className="bg-rose-50 text-rose-700 hover:bg-rose-100 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-rose-200 transition-all"><Trash2 size={18} className="mr-2" /> Reset Cloud</button>
         </div>
       </div>
 
@@ -630,35 +658,33 @@ export default function App() {
             <p className="text-lg font-bold text-blue-900 tracking-tight">คลิกเพื่ออัปโหลดไฟล์ข้อมูล</p>
             <p className="text-xs text-slate-400 mt-2 font-medium italic">* ทุกคนจะเห็นข้อมูลที่อัปโหลดพร้อมกันทันที</p>
           </div>
-          {uploadStatus && <div className="bg-blue-50 text-blue-700 p-4 rounded-xl text-center font-bold text-sm border border-blue-100">{uploadStatus}</div>}
-          {/* FIX: downloadTemplate now passes the current csvUploadType */}
           <div className="flex justify-center">
-            <button onClick={() => downloadTemplate(csvUploadType)} className="text-blue-500 font-bold text-xs flex items-center hover:underline bg-blue-50 px-4 py-1 rounded-full">
-              <Download size={14} className="mr-1" /> Download Template ({csvUploadType}) ตัวอย่างที่นี่
+            <button onClick={() => downloadTemplate(csvUploadType)} className="text-blue-500 font-bold text-xs flex items-center hover:underline bg-blue-50 px-4 py-1.5 rounded-full">
+              <Download size={14} className="mr-1" /> Download Template แบบ {csvUploadType}
             </button>
           </div>
         </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="flex bg-slate-50 p-1">
+        <div className="flex bg-slate-50 p-1 border-b">
           {['daily', 'demographic', 'assessment'].map(t => (
-            <button key={t} onClick={() => setEntrySubTab(t)} className={`flex-1 py-3 font-bold text-xs rounded-xl transition-all ${entrySubTab === t ? 'bg-white text-blue-600 shadow-sm border border-slate-100' : 'text-slate-400'}`}>
+            <button key={t} onClick={() => setEntrySubTab(t)} className={`flex-1 py-3 font-bold text-xs rounded-xl transition-all ${entrySubTab === t ? 'bg-white text-blue-600 shadow-sm border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}>
               {t === 'daily' ? 'บันทึกรายวัน' : t === 'demographic' ? 'ประวัติ' : 'แบบประเมิน'}
             </button>
           ))}
         </div>
-        <div className="p-8">
+        <div className="p-8 bg-slate-50/30">
           {entrySubTab === 'daily' && (
             <form onSubmit={handleDailySubmit} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">รหัส นรม.</label><input type="text" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-slate-50 outline-none focus:border-blue-400" value={dailyForm.studentId} onChange={(e) => setDailyForm({ ...dailyForm, studentId: e.target.value })} placeholder="001" required /></div>
-                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">สัปดาห์ที่</label><input type="number" min="1" max="16" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-slate-50 outline-none focus:border-blue-400" value={dailyForm.week} onChange={(e) => setDailyForm({ ...dailyForm, week: e.target.value })} required /></div>
-                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">วันที่</label><input type="date" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-slate-50 outline-none focus:border-blue-400" value={dailyForm.date} onChange={(e) => setDailyForm({ ...dailyForm, date: e.target.value })} required /></div>
+                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">รหัส นรม.</label><input type="text" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-white outline-none focus:border-blue-400" value={dailyForm.studentId} onChange={(e) => setDailyForm({ ...dailyForm, studentId: e.target.value })} placeholder="001" required /></div>
+                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">สัปดาห์ที่</label><input type="number" min="1" max="16" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-white outline-none focus:border-blue-400" value={dailyForm.week} onChange={(e) => setDailyForm({ ...dailyForm, week: e.target.value })} required /></div>
+                <div><label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">วันที่</label><input type="date" className="w-full p-3 border-2 border-slate-100 rounded-xl bg-white outline-none focus:border-blue-400" value={dailyForm.date} onChange={(e) => setDailyForm({ ...dailyForm, date: e.target.value })} required /></div>
               </div>
               <div className="grid grid-cols-3 gap-4 p-6 bg-blue-50/50 rounded-2xl border border-blue-100">
                 {['self', 'buddy', 'command'].map(k => (
-                  <div key={k}><label className="block text-[10px] font-black text-blue-400 mb-2 uppercase tracking-widest">{k}</label><select className="w-full p-2 border border-blue-200 rounded-lg font-bold text-blue-900" value={dailyForm[k]} onChange={(e) => setDailyForm({ ...dailyForm, [k]: e.target.value })}><option value="1">1-เขียว</option><option value="2">2-เหลือง</option><option value="3">3-ส้ม</option><option value="4">4-แดง</option></select></div>
+                  <div key={k}><label className="block text-[10px] font-black text-blue-400 mb-2 uppercase tracking-widest">{k}</label><select className="w-full p-2 border border-blue-200 rounded-lg font-bold text-blue-900 bg-white" value={dailyForm[k]} onChange={(e) => setDailyForm({ ...dailyForm, [k]: e.target.value })}><option value="1">1-เขียว</option><option value="2">2-เหลือง</option><option value="3">3-ส้ม</option><option value="4">4-แดง</option></select></div>
                 ))}
               </div>
               <button type="submit" className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl shadow-slate-200 tracking-widest uppercase hover:bg-black transition-all">ยืนยันการบันทึกรายวัน</button>
@@ -724,7 +750,7 @@ export default function App() {
           {authLoading
             ? <p className="text-[10px] text-orange-400 font-bold uppercase tracking-widest animate-pulse">Connecting to Cloud...</p>
             : user
-              ? <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">Live Cloud Sync: Active</p>
+              ? <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">Live Cloud Sync: <span className="text-emerald-400">Active</span></p>
               : <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest">Auth Failed — Offline</p>
           }
         </div>

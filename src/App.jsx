@@ -37,7 +37,7 @@ const escapeCSV = (str) => {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('entry'); 
-  const [entrySubTab, setEntrySubTab] = useState('daily'); // daily, demographic, assessment
+  const [entrySubTab, setEntrySubTab] = useState('daily'); 
   
   const [students, setStudents] = useState(INITIAL_STUDENTS);
   const [logs, setLogs] = useState(INITIAL_LOGS); 
@@ -47,9 +47,8 @@ export default function App() {
   const fileInputRef = useRef(null);
   const [uploadStatus, setUploadStatus] = useState('');
   const [showConfirmReset, setShowConfirmReset] = useState(false);
-  const [csvUploadType, setCsvUploadType] = useState('daily'); // 'daily', 'demographic', 'assessment'
+  const [csvUploadType, setCsvUploadType] = useState('daily'); 
   
-  // State สำหรับเลือกวันที่ในหน้า Heatmap
   const [heatmapDate, setHeatmapDate] = useState(new Date().toISOString().split('T')[0]);
 
   // --- FORM STATES ---
@@ -260,10 +259,8 @@ export default function App() {
     setShowConfirmReset(false);
   };
 
-  // --- DOWNLOAD TEMPLATES ---
   const downloadTemplate = () => {
     let header = ""; let example = ""; let filename = "";
-    // ใช้ BOM เพื่อให้เปิดใน Excel และอ่านภาษาไทยได้ถูกต้องเสมอ
     const BOM = "\uFEFF"; 
 
     if (csvUploadType === 'daily') {
@@ -288,7 +285,6 @@ export default function App() {
     link.click(); document.body.removeChild(link);
   };
 
-  // --- EXPORT MASTER DATA (RESEARCH READY) ---
   const handleExportMasterData = () => {
     let csv = "\uFEFF"; 
     csv += "Student_ID,Name,Room,Age,Gender,Region,School,Family_History,Financial_Burden,Baseline_Risk,Date,Week,Self_Color,Buddy_Color,Command_Color,Fatigue,Injury,DASS_Depression,DASS_Anxiety,DASS_Stress,CD_RISC,Drawing_Note\n";
@@ -352,45 +348,64 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  // --- DEMO DATA GENERATOR ---
+  // --- DEMO DATA GENERATOR (UPDATED TO TRUE 16 WEEKS / 112 DAYS) ---
   const loadDemoData = () => {
     const demoStudents = []; const demoLogs = []; const demoAssess = [];
-    for(let i=1; i<=30; i++) {
+    const startDate = new Date('2026-05-12');
+
+    // ปรับลดเหลือ 10 คน เพื่อไม่ให้ข้อมูลล้นเกินไป
+    for(let i=1; i<=10; i++) {
       const sid = i.toString().padStart(3, '0');
       const isHighRisk = Math.random() > 0.8;
+      // จัดห้องพัก ห้องละ 2 คน (ได้ห้อง 101 - 105)
+      const roomNumber = `10${Math.ceil(i / 2)}`; 
+
       demoStudents.push({
-        id: sid, name: `นรม. สมมติ ${sid}`, room: i%2===0?'101':'102', baseline: isHighRisk?'High':'Low', tag: '', isUnderCare: isHighRisk,
+        id: sid, name: `นรม. สมมติ ${sid}`, room: roomNumber, baseline: isHighRisk?'High':'Low', tag: '', isUnderCare: isHighRisk,
         demographics: { age: 18 + Math.floor(Math.random()*4), gender: 'ชาย', school: 'มัธยมปลาย', region: i%3===0?'กทม.':'ต่างจังหวัด', familyHistory: isHighRisk?'มี(ซึมเศร้า)':'ไม่มี', financialBurden: isHighRisk?'สูง':'ไม่มี' }
       });
 
+      // Assessments (Weeks 0, 4, 8, 16)
       [0, 4, 8, 16].forEach(wk => {
         let baseStress = isHighRisk ? 14 : 6;
         let stress = Math.max(0, baseStress + (Math.random()*10 - 5) + (wk===8 ? 6 : 0) - (wk===16 ? 4 : 0)); 
         let cdRisc = Math.max(0, Math.min(100, (isHighRisk ? 40 : 70) + (wk*1.5) + (Math.random()*10 - 5))); 
         
-        if (wk === 0 || wk === 4 || wk === 8 || wk === 16) {
-          demoAssess.push({ id: Date.now()+Math.random(), studentId: sid, week: wk, dass_d: Math.round(stress*0.8), dass_a: Math.round(stress*0.9), dass_s: Math.round(stress), cd_risc: (wk===0||wk===8||wk===16)?Math.round(cdRisc):null, drawing_note: wk===0?'วาดภาพปกติ':'' });
-        }
+        demoAssess.push({ id: Date.now()+Math.random(), studentId: sid, week: wk, dass_d: Math.round(stress*0.8), dass_a: Math.round(stress*0.9), dass_s: Math.round(stress), cd_risc: (wk===0||wk===8||wk===16)?Math.round(cdRisc):null, drawing_note: wk===0?'วาดภาพปกติ':'' });
       });
 
+      // Daily Logs (112 Days = 16 Weeks * 7 Days)
       for(let w=1; w<=16; w++) {
-        let mental = isHighRisk ? (w>=6 && w<=10 ? 3 : 2) : (w>=7 && w<=9 ? 2 : 1);
-        demoLogs.push({ id: Date.now()+Math.random(), studentId: sid, date: `2026-05-${(w+10).toString().padStart(2,'0')}`, week: w, self: mental, buddy: mental, command: mental, fatigue: Math.floor(Math.random()*5)+ (w>=6&&w<=10?4:1), injury: 0 });
+        for(let d=0; d<7; d++) {
+          let currentDate = new Date(startDate);
+          currentDate.setDate(startDate.getDate() + ((w - 1) * 7) + d);
+          let dateStr = currentDate.toISOString().split('T')[0];
+
+          let mental = isHighRisk ? (w>=6 && w<=10 ? 3 : 2) : (w>=7 && w<=9 ? 2 : 1);
+          // Randomize slightly for daily realism
+          if (Math.random() > 0.7) mental = Math.max(1, mental - 1);
+          
+          demoLogs.push({ 
+            id: Date.now()+Math.random(), studentId: sid, date: dateStr, week: w, 
+            self: mental, buddy: mental, command: mental, 
+            fatigue: Math.floor(Math.random()*5)+ (w>=6&&w<=10?4:1), injury: 0 
+          });
+        }
       }
     }
+    
     setStudents(demoStudents); setLogs(demoLogs); setAssessments(demoAssess);
     
     if (demoLogs.length > 0) setHeatmapDate(demoLogs[demoLogs.length-1].date);
-    setUploadStatus('โหลดข้อมูลจำลอง 16 สัปดาห์เรียบร้อยแล้ว');
+    setUploadStatus('โหลดข้อมูลจำลองแบบรายวัน (112 วัน / 16 สัปดาห์) เรียบร้อยแล้ว');
   };
 
-  // --- DATA AGGREGATION (FLATTENED FOR RECHARTS) ---
   const latestLogs = useMemo(() => {
     const map = {}; logs.forEach(log => { if (!map[log.studentId] || new Date(log.date) > new Date(map[log.studentId].date)) map[log.studentId] = log; });
     return map;
   }, [logs]);
 
-  // Overall Population Trend (Weekly) - Flattened data so Recharts can plot the Line
+  // Overall Population Trend (Weekly Mean & SD) - X-axis remains "Week"
   const populationWeeklyTrend = useMemo(() => {
     const weeksData = [];
     for (let w = 1; w <= 16; w++) {
@@ -413,7 +428,7 @@ export default function App() {
     return weeksData;
   }, [logs]);
 
-  // Assessments Population Trend - Flattened
+  // Assessments Population Trend - X-axis remains "Week"
   const assessWeeklyTrend = useMemo(() => {
     const weeks = [0, 4, 8, 16];
     return weeks.map(w => {
@@ -437,7 +452,6 @@ export default function App() {
     return <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">ปกติ</span>;
   };
 
-  // --- RENDERERS ---
   const renderOverview = () => {
     const overallStats = { 1: 0, 2: 0, 3: 0, 4: 0, injury: 0, total: students.length };
     Object.values(latestLogs).forEach(log => {
@@ -500,7 +514,7 @@ export default function App() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={populationWeeklyTrend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="week" tick={{fontSize: 10}} />
+                    <XAxis dataKey="week" tick={{fontSize: 10}} interval={0} />
                     <YAxis domain={[0, 4]} ticks={[1,2,3,4]} label={{ value: 'Mental Score', angle: -90, position: 'insideLeft', style: {fontSize: 12} }} />
                     <RechartsTooltip content={({ active, payload, label }) => {
                       if (active && payload && payload.length) {
@@ -534,7 +548,7 @@ export default function App() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={assessWeeklyTrend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="week" tick={{fontSize: 10}} />
+                    <XAxis dataKey="week" tick={{fontSize: 10}} interval={0} />
                     <YAxis yAxisId="left" domain={[0, 42]} label={{ value: 'DASS-21 (Stress)', angle: -90, position: 'insideLeft', style: {fontSize: 12} }} />
                     <YAxis yAxisId="right" orientation="right" domain={[0, 100]} label={{ value: 'CD-RISC', angle: 90, position: 'insideRight', style: {fontSize: 12} }} />
                     <RechartsTooltip content={({ active, payload, label }) => {
@@ -565,11 +579,9 @@ export default function App() {
     );
   }
 
-  // --- RENDERING HEATMAP TAB (WITH DATE PICKER) ---
   const renderHeatmap = () => {
     if (students.length === 0) return <div className="text-center p-12 text-slate-500">ไม่พบข้อมูล กรุณานำเข้าข้อมูลก่อน</div>;
     
-    // กรอง Log ตามวันที่เลือกเพื่อมาทำ Heatmap ของวันนั้นๆ
     const logsForDate = logs.filter(l => l.date === heatmapDate);
     const heatmapLogMap = {};
     logsForDate.forEach(l => heatmapLogMap[l.studentId] = l);
@@ -578,7 +590,6 @@ export default function App() {
       ...s, currentStatus: heatmapLogMap[s.id] || { self: 0, buddy: 0, command: 0, fatigue: 0, injury: 0 }
     }));
 
-    // ดึงรายชื่อห้องทั้งหมดที่ไม่ใช่ค่าว่างมาเรียง
     const rooms = [...new Set(studentsWithHeatmapStatus.map(s => s.room))].filter(Boolean).sort();
     
     return (
@@ -639,11 +650,20 @@ export default function App() {
     const studentInfo = students.find(s => s.id === selectedStudent);
     if(!studentInfo) return null;
 
-    const studentLogs = logs.filter(l => l.studentId === selectedStudent).sort((a,b) => a.week - b.week);
+    const studentLogs = logs.filter(l => l.studentId === selectedStudent).sort((a,b) => new Date(a.date) - new Date(b.date));
     const studentAssess = assessments.filter(a => a.studentId === selectedStudent).sort((a,b) => a.week - b.week);
 
-    const chartDataColors = studentLogs.map(l => ({ week: `Wk ${l.week}`, self: l.self, buddy: l.buddy, cmd: l.command }));
-    const chartDataPsych = studentAssess.map(a => ({ week: `Wk ${a.week}`, dass_s: a.dass_s, cd_risc: a.cd_risc }));
+    // แก้ไขแกน X ของกราฟ Daily ให้แสดงผลเป็น "วันที่ (Date)" เพื่อความถูกต้องสำหรับข้อมูลรายวัน
+    const chartDataColors = studentLogs.map(l => ({ 
+      date: l.date, 
+      displayDate: l.date.substring(5), // แสดงแค่ MM-DD ให้กราฟไม่รก
+      self: l.self, buddy: l.buddy, cmd: l.command 
+    }));
+    
+    // แกน X ของกราฟจิตวิทยาใช้เป็น "สัปดาห์ (Week)" ตามเดิมเพราะประเมินเป็นรายสัปดาห์
+    const chartDataPsych = studentAssess.map(a => ({ 
+      week: `Wk ${a.week}`, dass_s: a.dass_s, cd_risc: a.cd_risc 
+    }));
 
     return (
       <div className="space-y-6">
@@ -675,18 +695,19 @@ export default function App() {
 
           <div className="col-span-1 xl:col-span-2 space-y-6">
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-              <h4 className="font-bold text-slate-800 mb-4">แนวโน้ม 4 สี (Daily Color Trend)</h4>
+              <h4 className="font-bold text-slate-800 mb-4">แนวโน้ม 4 สี (Daily Color Trend - รายวัน)</h4>
               <div className="h-48">
                 {chartDataColors.length>0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartDataColors} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="week" tick={{fontSize: 10}} />
+                      <XAxis dataKey="displayDate" tick={{fontSize: 10}} />
                       <YAxis domain={[0, 4]} ticks={[1,2,3,4]} style={{fontSize: 10}} />
-                      <RechartsTooltip /> <Legend />
-                      <Line type="monotone" dataKey="self" stroke="#3b82f6" strokeWidth={2} />
-                      <Line type="monotone" dataKey="buddy" stroke="#10b981" strokeWidth={2} />
-                      <Line type="monotone" dataKey="cmd" name="Command" stroke="#f59e0b" strokeWidth={2} />
+                      <RechartsTooltip labelFormatter={(label) => `วันที่: ${label}`} /> <Legend />
+                      <Line type="monotone" dataKey="self" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                      <Line type="monotone" dataKey="buddy" stroke="#10b981" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="cmd" name="Command" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                      <Brush dataKey="displayDate" height={20} stroke="#cbd5e1" travellerWidth={10} /> 
                     </LineChart>
                   </ResponsiveContainer>
                 ) : <div className="text-center text-slate-400 mt-10">ไม่มีข้อมูลรายวัน</div>}
@@ -694,13 +715,13 @@ export default function App() {
             </div>
 
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-              <h4 className="font-bold text-slate-800 mb-4">แนวโน้มจิตวิทยาคลินิก (Psychological Assessments)</h4>
+              <h4 className="font-bold text-slate-800 mb-4">แนวโน้มจิตวิทยาคลินิก (Psychological Assessments - รายสัปดาห์)</h4>
               <div className="h-48">
                 {chartDataPsych.length>0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartDataPsych} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="week" tick={{fontSize: 10}} />
+                      <XAxis dataKey="week" tick={{fontSize: 10}} interval={0} />
                       <YAxis yAxisId="left" domain={[0, 42]} style={{fontSize: 10}} />
                       <YAxis yAxisId="right" orientation="right" domain={[0, 100]} style={{fontSize: 10}} />
                       <RechartsTooltip /> <Legend />
@@ -725,7 +746,6 @@ export default function App() {
           <p className="text-sm text-slate-500 mt-1">คีย์ข้อมูลเข้า หรือ ล้างข้อมูลระบบ</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {/* ปุ่มส่งออกข้อมูลเพิ่มใหม่ตรงนี้ */}
           <button onClick={handleExportMasterData} className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-4 py-2 rounded-lg text-sm font-bold flex items-center transition border border-transparent hover:border-emerald-200">
             <Download size={16} className="mr-2"/> ส่งออกข้อมูลวิจัย (Export)
           </button>

@@ -3,73 +3,35 @@ import {
   PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Brush 
 } from 'recharts';
 import { 
-  LayoutDashboard, Users, User, FileEdit, AlertTriangle, Activity, CheckCircle, Clock, HeartPulse, Stethoscope, UploadCloud, Download
+  LayoutDashboard, Users, User, FileEdit, AlertTriangle, Activity, CheckCircle, Clock, HeartPulse, Stethoscope, UploadCloud, Download, Trash2, X
 } from 'lucide-react';
 
-// --- MOCK DATA GENERATOR ---
 const INITIAL_STUDENTS = [
-  { id: '001', name: 'นรม. กรกฎ', room: '101', baseline: 'Low', tag: '', isUnderCare: false },
-  { id: '002', name: 'นรม. ขจร', room: '101', baseline: 'High', tag: 'เฝ้าระวัง (ต่อต้าน)', isUnderCare: true },
-  { id: '003', name: 'นรม. คมสัน', room: '101', baseline: 'Medium', tag: '', isUnderCare: false },
-  { id: '004', name: 'นรม. จิรายุ', room: '102', baseline: 'Medium', tag: '', isUnderCare: false },
-  { id: '005', name: 'นรม. ฉัตรชัย', room: '102', baseline: 'High', tag: 'รักษา (ซึมเศร้า)', isUnderCare: true },
-  { id: '006', name: 'นรม. ชลทิศ', room: '102', baseline: 'Low', tag: '', isUnderCare: false },
+  { id: '001', name: 'นรม. กรกฎ (ใส่ชื่อจริง)', room: '101', baseline: 'Low', tag: '', isUnderCare: false },
+  { id: '002', name: 'นรม. ขจร (ใส่ชื่อจริง)', room: '101', baseline: 'High', tag: 'เฝ้าระวัง', isUnderCare: true },
+  { id: '003', name: 'นรม. คมสัน (ใส่ชื่อจริง)', room: '102', baseline: 'Medium', tag: '', isUnderCare: false },
 ];
 
-const generateInitialLogs = (students) => {
-  const logs = [];
-  const startDate = new Date('2026-05-12');
-  let logId = 1;
-  const totalDays = 30; // จำลอง 30 วันเพื่อความรวดเร็วของตัวอย่าง
-
-  students.forEach(student => {
-    let currentFatigue = Math.floor(Math.random() * 3) + 1; 
-    let currentMental = student.baseline === 'High' ? 2 : 1;
-
-    for (let day = 0; day < totalDays; day++) {
-      const currentDate = new Date(startDate);
-      currentDate.setDate(startDate.getDate() + day);
-      const dateStr = currentDate.toISOString().split('T')[0];
-      
-      currentFatigue = Math.min(10, Math.max(1, currentFatigue + (Math.random() * 3 - 1)));
-      if (currentFatigue > 7 && Math.random() > 0.5) {
-         currentMental = Math.min(4, currentMental + (student.baseline === 'High' ? 1 : 0.5));
-      } else if (currentFatigue < 4) {
-         currentMental = Math.max(1, currentMental - 0.5);
-      }
-
-      const selfScore = Math.min(4, Math.max(1, Math.round(currentMental)));
-      logs.push({
-        id: logId++, studentId: student.id, date: dateStr,
-        self: selfScore, buddy: selfScore, command: selfScore,
-        fatigue: Math.round(currentFatigue), injury: (Math.random() > 0.95) ? 1 : 0
-      });
-    }
-  });
-  return logs;
-};
-
-const INITIAL_LOGS = generateInitialLogs(INITIAL_STUDENTS);
+const INITIAL_LOGS = []; 
 
 const COLORS = { 1: '#22c55e', 2: '#eab308', 3: '#f97316', 4: '#ef4444' };
 const PIE_COLORS = ['#22c55e', '#eab308', '#f97316', '#ef4444'];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('entry'); // เปิดหน้า Data Entry เป็นหน้าแรกให้เห็นระบบอัปโหลด
+  const [activeTab, setActiveTab] = useState('entry'); 
   const [students] = useState(INITIAL_STUDENTS);
-  const [logs, setLogs] = useState(INITIAL_LOGS);
-  const [selectedStudent, setSelectedStudent] = useState('002');
+  const [logs, setLogs] = useState(INITIAL_LOGS); 
+  const [selectedStudent, setSelectedStudent] = useState(students[0]?.id || '');
   
-  // State สำหรับการอัปโหลดไฟล์
   const fileInputRef = useRef(null);
   const [uploadStatus, setUploadStatus] = useState('');
+  const [showConfirmReset, setShowConfirmReset] = useState(false); // State สำหรับเปิด/ปิด Popup ยืนยัน
 
   const [entryForm, setEntryForm] = useState({
-    studentId: '001', date: new Date().toISOString().split('T')[0],
+    studentId: students[0]?.id || '', date: new Date().toISOString().split('T')[0],
     self: 1, buddy: 1, command: 1, fatigue: 1, injury: 0
   });
 
-  // --- ระบบ MANAUL ENTRY ---
   const handleEntrySubmit = (e) => {
     e.preventDefault();
     const newLog = { ...entryForm, id: Date.now(), 
@@ -81,7 +43,6 @@ export default function App() {
     alert('บันทึกข้อมูลรายบุคคลสำเร็จ!');
   };
 
-  // --- ระบบ CSV UPLOAD ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -93,12 +54,11 @@ export default function App() {
       try {
         const text = evt.target.result;
         const lines = text.split('\n');
-        // คาดหวัง header: studentId,date,self,buddy,command,fatigue,injury
         
         const newLogs = [];
         let successCount = 0;
 
-        for (let i = 1; i < lines.length; i++) { // ข้าม header บรรทัดที่ 0
+        for (let i = 1; i < lines.length; i++) { 
           if (!lines[i].trim()) continue;
           
           const values = lines[i].split(',').map(v => v.trim());
@@ -128,14 +88,19 @@ export default function App() {
       }
     };
     reader.readAsText(file);
-    // เคลียร์ input เผื่อต้องการอัปโหลดไฟล์เดิมซ้ำ
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // โหลด Template CSV ให้ธุรการเอาไปกรอกใน Excel
+  // --- ฟังก์ชัน Reset ข้อมูล ---
+  const handleResetData = () => {
+    setLogs([]); // ล้างข้อมูล logs ทั้งหมด
+    setUploadStatus('รีเซ็ตข้อมูลทั้งหมดเรียบร้อยแล้ว');
+    setShowConfirmReset(false); // ปิด Popup
+  };
+
   const downloadTemplate = () => {
     const header = "studentId,date,self,buddy,command,fatigue,injury\n";
-    const example = "001,2026-06-12,1,1,1,2,0\n002,2026-06-12,3,2,2,8,0\n";
+    const example = "001,2026-05-12,1,1,1,2,0\n002,2026-05-12,3,2,2,8,0\n";
     const blob = new Blob([header + example], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -145,7 +110,6 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  // --- DERIVED DATA ---
   const latestLogs = useMemo(() => {
     const map = {};
     logs.forEach(log => {
@@ -180,7 +144,7 @@ export default function App() {
   ];
 
   const getAlertBadge = (status) => {
-    if (!status || !status.self) return <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs rounded-full">ไม่มีข้อมูล</span>;
+    if (!status || !status.self || status.self === 0) return <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs rounded-full">ยังไม่มีข้อมูล</span>;
     const maxScore = Math.max(status.self, status.buddy, status.command);
     if (maxScore >= 4) return <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full font-bold">วิกฤต (Ill)</span>;
     if (maxScore === 3) return <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded-full font-bold">บาดเจ็บ (Injured)</span>;
@@ -188,7 +152,6 @@ export default function App() {
     return <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">ปกติ</span>;
   };
 
-  // --- RENDERERS ---
   const renderOverview = () => (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -214,15 +177,21 @@ export default function App() {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
           <h3 className="text-lg font-bold mb-4 text-slate-800">สัดส่วนสภาวะจิตใจปัจจุบัน</h3>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" label>
-                  {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
-                </Pie>
-                <RechartsTooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            {logs.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" label>
+                    {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <RechartsTooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-slate-400">
+                ยังไม่มีข้อมูล กรุณานำเข้าข้อมูล CSV
+              </div>
+            )}
           </div>
         </div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
@@ -268,17 +237,19 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {studentsWithLatestStatus.filter(s => s.room === room).map(s => (
+                  {studentsWithLatestStatus.filter(s => s.room === room).map(s => {
+                    const hasData = s.currentStatus.self > 0;
+                    return (
                     <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50">
                       <td className="p-3 font-medium text-slate-500">{s.id}</td><td className="p-3">{s.name}</td>
-                      <td className="p-3"><div className="w-full h-8 rounded" style={{backgroundColor: COLORS[s.currentStatus.self]}}></div></td>
-                      <td className="p-3"><div className="w-full h-8 rounded" style={{backgroundColor: COLORS[s.currentStatus.buddy]}}></div></td>
-                      <td className="p-3"><div className="w-full h-8 rounded" style={{backgroundColor: COLORS[s.currentStatus.command]}}></div></td>
-                      <td className="p-3 text-center font-bold text-slate-700">{s.currentStatus.fatigue}/10</td>
+                      <td className="p-3"><div className={`w-full h-8 rounded ${!hasData && 'bg-slate-200'}`} style={{backgroundColor: COLORS[s.currentStatus.self]}}></div></td>
+                      <td className="p-3"><div className={`w-full h-8 rounded ${!hasData && 'bg-slate-200'}`} style={{backgroundColor: COLORS[s.currentStatus.buddy]}}></div></td>
+                      <td className="p-3"><div className={`w-full h-8 rounded ${!hasData && 'bg-slate-200'}`} style={{backgroundColor: COLORS[s.currentStatus.command]}}></div></td>
+                      <td className="p-3 text-center font-bold text-slate-700">{hasData ? `${s.currentStatus.fatigue}/10` : '-'}</td>
                       <td className="p-3 text-center">{s.currentStatus.injury === 1 ? <span className="text-red-500 font-bold">Yes</span> : <span className="text-slate-300">-</span>}</td>
                       <td className="p-3">{getAlertBadge(s.currentStatus)}</td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>
@@ -328,19 +299,25 @@ export default function App() {
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 col-span-1 xl:col-span-2">
               <h4 className="font-bold text-slate-800 mb-4">กราฟแนวโน้ม กาย vs ใจ</h4>
               <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="displayDate" tick={{fontSize: 10}} stroke="#94a3b8" />
-                    <YAxis yAxisId="left" domain={[0, 4]} ticks={[1,2,3,4]} label={{ value: 'Mental Score', angle: -90, position: 'insideLeft', style: {fontSize: 12, fill: '#64748b'} }} />
-                    <YAxis yAxisId="right" orientation="right" domain={[0, 10]} label={{ value: 'Fatigue (1-10)', angle: 90, position: 'insideRight', style: {fontSize: 12, fill: '#64748b'} }} />
-                    <RechartsTooltip labelFormatter={(label) => `วันที่: ${label}`} />
-                    <Legend verticalAlign="top" height={36}/>
-                    <Line yAxisId="left" type="monotone" dataKey="mentalMax" name="Mental Status (Max)" stroke="#f97316" strokeWidth={2} dot={false} activeDot={{ r: 6 }} />
-                    <Line yAxisId="right" type="monotone" dataKey="fatigue" name="Physical Fatigue" stroke="#3b82f6" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-                    <Brush dataKey="displayDate" height={20} stroke="#cbd5e1" travellerWidth={10} /> 
-                  </LineChart>
-                </ResponsiveContainer>
+                {chartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="displayDate" tick={{fontSize: 10}} stroke="#94a3b8" />
+                      <YAxis yAxisId="left" domain={[0, 4]} ticks={[1,2,3,4]} label={{ value: 'Mental Score', angle: -90, position: 'insideLeft', style: {fontSize: 12, fill: '#64748b'} }} />
+                      <YAxis yAxisId="right" orientation="right" domain={[0, 10]} label={{ value: 'Fatigue (1-10)', angle: 90, position: 'insideRight', style: {fontSize: 12, fill: '#64748b'} }} />
+                      <RechartsTooltip labelFormatter={(label) => `วันที่: ${label}`} />
+                      <Legend verticalAlign="top" height={36}/>
+                      <Line yAxisId="left" type="monotone" dataKey="mentalMax" name="Mental Status (Max)" stroke="#f97316" strokeWidth={2} dot={false} activeDot={{ r: 6 }} />
+                      <Line yAxisId="right" type="monotone" dataKey="fatigue" name="Physical Fatigue" stroke="#3b82f6" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                      <Brush dataKey="displayDate" height={20} stroke="#cbd5e1" travellerWidth={10} /> 
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-400">
+                    ยังไม่มีข้อมูลประเมินสำหรับนักเรียนรายนี้
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -352,39 +329,69 @@ export default function App() {
   const renderDataEntry = () => (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl mx-auto">
       
-      {/* SECTION 1: Bulk Upload (Primary) */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+      {/* SECTION 1: Bulk Upload */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative">
         <div className="border-b pb-4 mb-6 flex items-center justify-between">
           <div>
             <h3 className="text-xl font-bold text-blue-800 flex items-center">
               <UploadCloud className="mr-2" /> นำเข้าข้อมูลแบบกลุ่ม (CSV Upload)
             </h3>
-            <p className="text-sm text-slate-500 mt-1">วิธีหลัก (Primary): สำหรับข้อมูลที่ธุรการพิมพ์สรุปจากกระดาษลง Excel</p>
+            <p className="text-sm text-slate-500 mt-1">วิธีหลัก: อัปโหลดไฟล์ .csv ที่ได้จากการกรอกใน Excel</p>
           </div>
+          {/* ปุ่มล้างข้อมูล */}
+          <button 
+            onClick={() => setShowConfirmReset(true)}
+            className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors flex items-center text-sm font-semibold border border-transparent hover:border-red-200"
+            title="ล้างข้อมูลทั้งหมด"
+          >
+            <Trash2 size={16} className="mr-1" /> รีเซ็ตข้อมูล
+          </button>
         </div>
+
+        {/* Modal ยืนยันการรีเซ็ต */}
+        {showConfirmReset && (
+          <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-10 rounded-xl flex items-center justify-center p-6 border border-red-200">
+            <div className="bg-white p-6 rounded-lg shadow-xl text-center max-w-sm">
+              <AlertTriangle size={48} className="text-red-500 mx-auto mb-4" />
+              <h4 className="text-lg font-bold text-slate-800 mb-2">ยืนยันการล้างข้อมูล?</h4>
+              <p className="text-sm text-slate-500 mb-6">คุณกำลังจะลบข้อมูลที่อัปโหลดและกรอกมาทั้งหมด (กราฟทั้งหมดจะกลับเป็นหน้าว่าง) การกระทำนี้ไม่สามารถย้อนกลับได้</p>
+              <div className="flex space-x-3 justify-center">
+                <button 
+                  onClick={() => setShowConfirmReset(false)}
+                  className="px-4 py-2 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium"
+                >
+                  ยกเลิก
+                </button>
+                <button 
+                  onClick={handleResetData}
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 font-medium flex items-center"
+                >
+                  <Trash2 size={16} className="mr-2" /> ลบข้อมูลทั้งหมด
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         
         <div className="space-y-6">
           <div className="p-6 border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-xl text-center">
             <input 
-              type="file" 
-              accept=".csv" 
-              className="hidden" 
-              ref={fileInputRef}
-              onChange={handleFileUpload}
+              type="file" accept=".csv" className="hidden" 
+              ref={fileInputRef} onChange={handleFileUpload}
             />
             <button 
               onClick={() => fileInputRef.current?.click()}
               className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 inline-flex items-center"
             >
-              <UploadCloud className="mr-2" size={20} />
-              เลือกไฟล์ .CSV เพื่ออัปโหลด
+              <UploadCloud className="mr-2" size={20} /> เลือกไฟล์ .CSV เพื่ออัปโหลด
             </button>
-            <p className="text-xs text-slate-500 mt-3">* รองรับไฟล์ .csv ที่มีหัวคอลัมน์ถูกต้องเท่านั้น ข้อมูลจะถูกดึงเข้ากราฟแบบ Real-time ทันที</p>
+            <p className="text-xs text-slate-500 mt-3">* ข้อมูลจะถูกดึงเข้ากราฟแบบ Real-time ทันที</p>
           </div>
 
           {uploadStatus && (
-            <div className={`p-3 rounded-lg text-sm font-medium ${uploadStatus.includes('สำเร็จ') ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-              {uploadStatus}
+            <div className={`p-3 rounded-lg text-sm font-medium flex justify-between items-center ${uploadStatus.includes('สำเร็จ') ? 'bg-green-100 text-green-700' : uploadStatus.includes('รีเซ็ต') ? 'bg-slate-100 text-slate-600' : 'bg-orange-100 text-orange-700'}`}>
+              <span>{uploadStatus}</span>
+              <button onClick={() => setUploadStatus('')} className="hover:bg-black/10 p-1 rounded"><X size={14}/></button>
             </div>
           )}
 
@@ -398,21 +405,21 @@ export default function App() {
             <div className="overflow-x-auto">
               <code className="text-xs text-slate-600 whitespace-pre">
                 studentId,date,self,buddy,command,fatigue,injury<br/>
-                001,2026-06-12,1,1,1,2,0<br/>
-                002,2026-06-12,3,2,2,8,0
+                001,2026-05-12,1,1,1,2,0<br/>
+                002,2026-05-12,3,2,2,8,0
               </code>
             </div>
           </div>
         </div>
       </div>
 
-      {/* SECTION 2: Single Entry (Secondary) */}
+      {/* SECTION 2: Single Entry */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
         <div className="border-b pb-4 mb-6">
           <h3 className="text-xl font-bold text-slate-800 flex items-center">
             <FileEdit className="mr-2" /> บันทึกข้อมูลรายบุคคล (Manual)
           </h3>
-          <p className="text-sm text-slate-500 mt-1">วิธีสำรอง (Secondary): สำหรับอัปเดตเคสฉุกเฉิน / แก้ไขข้อมูลระหว่างวัน</p>
+          <p className="text-sm text-slate-500 mt-1">วิธีสำรอง: สำหรับอัปเดตเคสฉุกเฉิน / แก้ไขข้อมูลระหว่างวัน</p>
         </div>
 
         <form onSubmit={handleEntrySubmit} className="space-y-5">

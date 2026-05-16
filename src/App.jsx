@@ -264,7 +264,6 @@ export default function App() {
     setAssessForm({ studentId: '', week: 0, dass_d: '', dass_a: '', dass_s: '', cd_risc: '', grit: '', drawing_note: '' });
   };
 
-  // --- LOGIC: CSV Upload ---
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file || !user) return;
@@ -338,15 +337,25 @@ export default function App() {
       const dS = []; const dL = []; const dA = [];
       let lastDateForHeatmap = ''; 
 
+      // ----------------------------------------------------
+      // จำลองข้อมูล: ชาย 6 คน (201-203), หญิง 4 คน (601-602)
+      // ----------------------------------------------------
       for (let i = 1; i <= 10; i++) {
         const sid = i.toString().padStart(3, '0');
-        const rm = `10${Math.ceil(i / 2)}`;
         const isHighRisk = Math.random() > 0.8;
         
+        let gender = i <= 6 ? 'ชาย' : 'หญิง';
+        let rm = '';
+        if (gender === 'ชาย') {
+          rm = `20${Math.ceil(i / 2)}`; // i=1,2 -> 201 | i=3,4 -> 202 | i=5,6 -> 203
+        } else {
+          rm = `60${Math.ceil((i - 6) / 2)}`; // i=7,8 -> 601 | i=9,10 -> 602
+        }
+        
         dS.push({ 
-          id: sid, name: `นรม. สมมติ ${sid}`, room: rm, baseline: isHighRisk ? 'High' : 'Low', tag: '', 
+          id: sid, name: `นรม. ${gender === 'ชาย' ? 'สมชาย' : 'สมหญิง'} ${sid}`, room: rm, baseline: isHighRisk ? 'High' : 'Low', tag: '', 
           demographics: { 
-            age: 18 + Math.floor(Math.random()*3), gender: i%2===0?'หญิง':'ชาย', region: 'กทม.', school: 'มัธยมปลาย', 
+            age: 18 + Math.floor(Math.random()*3), gender: gender, region: 'กทม.', school: 'มัธยมปลาย', 
             familyHistory: isHighRisk?'มี(ซึมเศร้า)':'ไม่มี', financialBurden: isHighRisk?'สูง':'ไม่มี',
             physicalIssueDetail: isHighRisk?'หอบหืด':'', mentalIssueDetail: isHighRisk?'เครียดสะสม':'', mentalSeverity: isHighRisk?3:1
           } 
@@ -455,7 +464,6 @@ export default function App() {
     };
   }), [filteredAssess]);
 
-  // FIX: CD-RISC & GRIT ดึงและพล็อตเฉพาะข้อมูลสัปดาห์ที่ 0, 8, 16 เท่านั้น เพื่อความสวยงามของแกน X
   const resilienceTrend = useMemo(() => [0, 8, 16].map(w => {
     const wA = filteredAssess.filter(a => a.week === w);
     return { 
@@ -585,7 +593,6 @@ export default function App() {
             {loadingAssessments ? <Skeleton className="h-72" /> : (
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  {/* CD-RISC & GRIT จะพล็อตแค่จุด 0, 8, 16 ตามข้อมูล resilienceTrend ที่ถูกกรองมาแล้ว */}
                   <LineChart data={resilienceTrend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={0} />
@@ -633,7 +640,6 @@ export default function App() {
           </div>
         </div>
         
-        {/* เพิ่ม Legend อธิบายคำย่อ D, A, S ป้องกันความสับสน */}
         <div className="flex space-x-6 text-xs text-slate-500 mb-6 bg-slate-50 inline-flex p-3 rounded-lg border border-slate-100">
            <span><b className="text-blue-600">D</b> = Depression (ซึมเศร้า)</span>
            <span><b className="text-orange-500">A</b> = Anxiety (วิตกกังวล)</span>
@@ -699,9 +705,7 @@ export default function App() {
     const sL = logs.filter(l => l.studentId === selectedStudent).sort((a, b) => new Date(a.date) - new Date(b.date));
     const sA = assessments.filter(a => a.studentId === selectedStudent).sort((a, b) => a.week - b.week);
     
-    // กรองเฉพาะสัปดาห์ 0, 8, 16 สำหรับกราฟ CD-RISC/GRIT ให้แกน X สวยงาม
     const resilienceIndividualData = sA.filter(a => [0, 8, 16].includes(a.week));
-    
     const latestAssess = sA.length > 0 ? sA[sA.length - 1] : {};
 
     return (
@@ -716,6 +720,7 @@ export default function App() {
           <div className="col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
             <h4 className="font-bold border-b pb-3 text-blue-600 flex items-center"><User size={18} className="mr-2"/> ข้อมูลพื้นฐาน</h4>
             <div className="text-sm space-y-3">
+              <div className="flex justify-between items-center"><span className="text-slate-500">เพศ:</span><b className="text-slate-800">{s.demographics?.gender || '-'}</b></div>
               <div className="flex justify-between items-center"><span className="text-slate-500">ห้องพัก:</span><b className="text-slate-800">{s.room}</b></div>
               <div className="flex justify-between items-center"><span className="text-slate-500">ป่วยกาย (Detail):</span><b className="text-slate-800">{s.demographics?.physicalIssueDetail || '-'}</b></div>
               <div className="flex justify-between items-center"><span className="text-slate-500">สุขภาพจิต (Detail):</span><b className="text-slate-800">{s.demographics?.mentalIssueDetail || '-'}</b></div>
@@ -807,8 +812,8 @@ export default function App() {
         </div>
         <div className="flex flex-wrap gap-3">
           <button onClick={handleExportMasterData} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center shadow-lg transition-all"><Download size={18} className="mr-2" /> Export CSV</button>
-          <button onClick={loadDemoData} className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-indigo-200 transition-all"><Activity size={18} className="mr-2" /> Load Demo Data</button>
-          <button onClick={() => setShowConfirmReset(true)} className="bg-rose-50 text-rose-700 hover:bg-rose-100 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-rose-200 transition-all"><Trash2 size={18} className="mr-2" /> Reset Cloud</button>
+          <button onClick={loadDemoData} className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-indigo-200 transition-all">Load Demo</button>
+          <button onClick={() => setShowConfirmReset(true)} className="bg-rose-50 text-rose-700 hover:bg-rose-100 px-6 py-2.5 rounded-xl text-sm font-bold flex items-center border border-rose-200 transition-all">Reset Cloud</button>
         </div>
       </div>
 
@@ -877,7 +882,7 @@ export default function App() {
             <form onSubmit={handleDemoSubmit} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div><label className="block text-xs font-bold text-slate-400 mb-1">รหัส นรม.</label><input type="text" className="w-full p-3 border rounded-xl" value={demoForm.studentId} onChange={(e) => setDemoForm({ ...demoForm, studentId: e.target.value })} placeholder="001" required /></div>
-                <div><label className="block text-xs font-bold text-slate-400 mb-1">ชื่อ-สกุล</label><input type="text" className="w-full p-3 border rounded-xl" value={demoForm.name} onChange={(e) => setDemoForm({ ...demoForm, name: e.target.value })} placeholder="นรม. กรกฎ" required /></div>
+                <div><label className="block text-xs font-bold text-slate-400 mb-1">ชื่อ-สกุล</label><input type="text" className="w-full p-3 border rounded-xl" value={demoForm.name} onChange={(e) => setDemoForm({ ...demoForm, name: e.target.value })} placeholder="นรม. สมชาย" required /></div>
                 <div><label className="block text-xs font-bold text-slate-400 mb-1">ห้องพัก</label><input type="text" className="w-full p-3 border rounded-xl" value={demoForm.room} onChange={(e) => setDemoForm({ ...demoForm, room: e.target.value })} placeholder="101" required /></div>
                 <div><label className="block text-xs font-bold text-slate-400 mb-1">อายุ</label><input type="number" className="w-full p-3 border rounded-xl" value={demoForm.age} onChange={(e) => setDemoForm({ ...demoForm, age: e.target.value })} placeholder="19" /></div>
                 <div><label className="block text-xs font-bold text-slate-400 mb-1">เพศ</label><select className="w-full p-3 border rounded-xl" value={demoForm.gender} onChange={(e) => setDemoForm({ ...demoForm, gender: e.target.value })}><option>ชาย</option><option>หญิง</option></select></div>

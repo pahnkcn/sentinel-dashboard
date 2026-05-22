@@ -386,7 +386,6 @@ export default function App() {
            <span><b className="text-blue-600">D</b> = Depression (ซึมเศร้า)</span>
            <span><b className="text-orange-500">A</b> = Anxiety (วิตกกังวล)</span>
            <span><b className="text-rose-500">S</b> = Stress (ความเครียด)</span>
-           <span className="ml-4 opacity-50"><i>* สีจาง = คะแนนที่ดึงมาจากรอบประเมินล่าสุด (วันพุธ/อาทิตย์)</i></span>
         </div>
 
         {loadingStudents || loadingLogs ? (
@@ -423,10 +422,10 @@ export default function App() {
                           <div className="w-6 h-6 mx-auto rounded-md shadow-inner" style={{ backgroundColor: COLORS[stL.self] || '#f1f5f9' }}></div>
                         </td>
                         <td className="p-4 text-center">
-                          <div className="w-6 h-6 mx-auto rounded-md shadow-inner" style={{ backgroundColor: COLORS[stL.buddy] || '#f1f5f9', opacity: stL.isBuddyCF ? 0.3 : 1 }}></div>
+                          <div className="w-6 h-6 mx-auto rounded-md shadow-inner" style={{ backgroundColor: COLORS[stL.buddy] || '#f1f5f9' }}></div>
                         </td>
                         <td className="p-4 text-center">
-                          <div className="w-6 h-6 mx-auto rounded-md shadow-inner" style={{ backgroundColor: COLORS[stL.command] || '#f1f5f9', opacity: stL.isCommandCF ? 0.3 : 1 }}></div>
+                          <div className="w-6 h-6 mx-auto rounded-md shadow-inner" style={{ backgroundColor: COLORS[stL.command] || '#f1f5f9' }}></div>
                         </td>
                         <td className="p-4 text-center font-bold text-slate-600 border-l">{stA.cd_risc ?? '-'}</td>
                         <td className="p-4 text-center font-bold text-slate-600">{stA.grit ?? '-'}</td>

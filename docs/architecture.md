@@ -55,8 +55,10 @@ contains an allowed `sentinelRole`, only the access gate is rendered. The
 dashboard and Firestore code are loaded lazily after authorization.
 
 Firebase configuration has no repository fallback. Vite and the runtime both
-validate required values. Development mode is forced onto fixed localhost Auth
-and Firestore emulators; every remote mode requires App Check configuration.
+validate required values. The actual Vite development-server command is forced
+onto fixed localhost Auth and Firestore emulators; freely selectable mode names
+are not trusted for this decision. ConfigEnv `command` and `isPreview` form the
+classification Seam, while every remote mode requires App Check configuration.
 Auth is initialized with browser-session persistence rather than the Firebase
 web default, so a privileged sign-in is not retained after its tab or browser
 session closes.

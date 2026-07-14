@@ -64,6 +64,51 @@ test('forces emulators in development and forbids them in production', () => {
   assert.equal(development.useEmulators, true);
 });
 
+test('uses the Vite command to prevent mode-based dev-server bypasses', () => {
+  for (const mode of ['production', 'staging']) {
+    assert.throws(
+      () => readFirebaseEnvironment(VALID_ENVIRONMENT, {
+        mode,
+        command: 'serve',
+        isPreview: false,
+      }),
+      /development server requires Firebase emulators/,
+    );
+  }
+
+  const customModeDevelopment = readFirebaseEnvironment({
+    ...VALID_ENVIRONMENT,
+    VITE_FIREBASE_APPCHECK_SITE_KEY: '',
+    VITE_FIREBASE_USE_EMULATORS: 'true',
+  }, {
+    mode: 'staging',
+    command: 'serve',
+    isPreview: false,
+  });
+  assert.equal(customModeDevelopment.useEmulators, true);
+
+  const productionPreview = readFirebaseEnvironment(VALID_ENVIRONMENT, {
+    mode: 'production',
+    command: 'serve',
+    isPreview: true,
+  });
+  assert.equal(productionPreview.useEmulators, false);
+});
+
+test('rejects incoherent Vite command metadata', () => {
+  assert.throws(
+    () => readFirebaseEnvironment(VALID_ENVIRONMENT, { command: 'preview' }),
+    /known Vite command/,
+  );
+  assert.throws(
+    () => readFirebaseEnvironment(VALID_ENVIRONMENT, {
+      command: 'build',
+      isPreview: true,
+    }),
+    /invalid Vite preview state/,
+  );
+});
+
 test('requires App Check configuration for every remote environment', () => {
   assert.throws(
     () => readFirebaseEnvironment({

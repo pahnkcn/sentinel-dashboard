@@ -21,7 +21,9 @@ so closing the tab or browser clears the saved sign-in state.
 ## Local setup
 
 Local development is emulator-only. The development template uses a demo
-project ID and cannot connect to a remote Firebase project.
+project ID and cannot connect to a remote Firebase project. The guard uses the
+actual Vite dev-server command, not the selectable mode name, so
+`npm run dev -- --mode production` stops before serving.
 
 ```sh
 npm ci

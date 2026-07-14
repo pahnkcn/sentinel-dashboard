@@ -49,7 +49,18 @@ function validateConfig(config) {
   }
 }
 
-export function readFirebaseEnvironment(environment, { mode = 'production' } = {}) {
+export function readFirebaseEnvironment(environment, {
+  mode = 'production',
+  command = 'build',
+  isPreview = false,
+} = {}) {
+  if (command !== 'build' && command !== 'serve') {
+    throw new Error('Firebase environment requires a known Vite command');
+  }
+  if (typeof isPreview !== 'boolean' || (isPreview && command !== 'serve')) {
+    throw new Error('Firebase environment received invalid Vite preview state');
+  }
+
   const firebaseConfig = Object.fromEntries(
     FIREBASE_FIELDS.map(([environmentKey, configKey]) => (
       [configKey, readRequired(environment, environmentKey)]
@@ -62,6 +73,10 @@ export function readFirebaseEnvironment(environment, { mode = 'production' } = {
 
   validateConfig(firebaseConfig);
 
+  const isDevelopmentServer = command === 'serve' && !isPreview;
+  if (isDevelopmentServer && !useEmulators) {
+    throw new Error('Vite development server requires Firebase emulators');
+  }
   if (mode === 'development' && !useEmulators) {
     throw new Error('Development mode requires Firebase emulators');
   }

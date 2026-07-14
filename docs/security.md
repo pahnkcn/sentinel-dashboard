@@ -37,7 +37,7 @@ monitoring decisions.
 | Cross-site script and framing attacks | Hosting CSP, frame denial, MIME sniffing protection, HSTS, permissions policy |
 | Unnecessary pre-auth code/data path | Dashboard, Firestore, and charts load only after authorization |
 | Automated abuse | Required reCAPTCHA Enterprise App Check for remote builds and CSP support |
-| Accidental local access to live data | No fallback config; development is forced to localhost emulators |
+| Accidental local access to live data | No fallback config; Vite `command`/`isPreview`, not user-selectable mode names, force every actual dev server to localhost emulators |
 
 Unit tests cover claim classification, safe Auth error reporting, hosting
 headers, decoding, server-snapshot verification, subscription lifecycle, and

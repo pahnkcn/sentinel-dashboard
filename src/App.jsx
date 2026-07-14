@@ -5,28 +5,11 @@ import {
 import { 
   LayoutDashboard, Users, User, Activity, Clock, HeartPulse, ShieldCheck, BookOpen, Calendar
 } from 'lucide-react';
+import { collection, onSnapshot } from 'firebase/firestore';
 
-// ==========================================
-// FIREBASE CLOUD STORAGE CONFIGURATION
-// ==========================================
-import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBNNcFjfkIko-mN9zpATT_lD0FQuX5wDdA",
-  authDomain: "sentinel-dashboard-9a05c.firebaseapp.com",
-  databaseURL: "https://sentinel-dashboard-9a05c-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "sentinel-dashboard-9a05c",
-  storageBucket: "sentinel-dashboard-9a05c.firebasestorage.app",
-  messagingSenderId: "659194434716",
-  appId: "1:659194434716:web:5a683e788742760ebf8959",
-  measurementId: "G-RLSQKNJY2G"
-};
-
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-const auth = getAuth(app);
-const db = getFirestore(app);
+import { AccessGate } from './auth/AccessGate.jsx';
+import { useAuthorization } from './auth/useAuthorization.js';
+import { db, firebaseConfig } from './config/firebase.js';
 
 // ==========================================
 // HELPERS & CONSTANTS
@@ -76,10 +59,19 @@ const Skeleton = ({ className = '' }) => (
 );
 
 export default function App() {
+  const authorization = useAuthorization();
+
+  if (authorization.status !== 'authorized') {
+    return <AccessGate authorization={authorization} />;
+  }
+
+  return <Dashboard key={authorization.user.uid} authorization={authorization} />;
+}
+
+function Dashboard({ authorization }) {
   const [activeTab, setActiveTab] = useState('overview');
 
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const { user, role, signOut } = authorization;
   const [students, setStudents] = useState([]);
   const [rawLogs, setRawLogs] = useState([]);
   const [assessments, setAssessments] = useState([]);
@@ -91,15 +83,6 @@ export default function App() {
   const [genderFilter, setGenderFilter] = useState('all');
 
   useEffect(() => {
-    signInAnonymously(auth).catch(err => console.error("Auth Failure:", err));
-    return onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setAuthLoading(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
     const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
       setStudents(snapshot.docs.map(d => d.data()));
       setLoadingStudents(false);
@@ -570,13 +553,18 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="p-6 text-center border-t border-white/5 bg-slate-900/50">
-          {authLoading
-            ? <p className="text-[10px] text-orange-400 font-bold uppercase tracking-widest animate-pulse">Connecting to Cloud...</p>
-            : user
-              ? <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">Live Cloud Sync: <span className="text-emerald-400">Active</span></p>
-              : <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest">Auth Failed — Offline</p>
-          }
+        <div className="p-6 border-t border-white/5 bg-slate-900/50">
+          <p className="truncate text-[10px] font-bold uppercase tracking-widest text-emerald-400">
+            Authorized · {role}
+          </p>
+          <p className="mt-1 truncate text-[10px] text-slate-500">{user.email}</p>
+          <button
+            type="button"
+            onClick={signOut}
+            className="mt-3 text-xs font-bold text-slate-400 transition hover:text-white"
+          >
+            ออกจากระบบ
+          </button>
         </div>
       </div>
 

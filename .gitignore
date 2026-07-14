@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Local environment overrides
+.env
+.env.*
+!.env.example
+
 # Graphify generated artifacts
 graphify-out/
 

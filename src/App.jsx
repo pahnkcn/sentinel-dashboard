@@ -3,7 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Brush
 } from 'recharts';
 import { 
-  LayoutDashboard, Users, User, Activity, Clock, HeartPulse, ShieldCheck, Calendar
+  LayoutDashboard, Users, User, Activity, Clock, HeartPulse, ShieldCheck
 } from 'lucide-react';
 import { AccessGate } from './auth/AccessGate.jsx';
 import { useAuthorization } from './auth/useAuthorization.js';
@@ -11,12 +11,8 @@ import { firebaseConfig } from './config/firebase.js';
 import { useMonitoringData } from './data/useMonitoringData.js';
 import { createMonitoringAnalytics } from './domain/monitoringAnalytics.js';
 import { OverviewScreen } from './screens/OverviewScreen.jsx';
+import { RoomStatusScreen } from './screens/RoomStatusScreen.jsx';
 import { Skeleton } from './ui/Skeleton.jsx';
-
-// ==========================================
-// HELPERS & CONSTANTS
-// ==========================================
-const COLORS = { 1: '#22c55e', 2: '#eab308', 3: '#f97316', 4: '#ef4444' };
 
 export default function App() {
   const authorization = useAuthorization();
@@ -48,7 +44,6 @@ function Dashboard({ authorization }) {
   const loadingAssessments = loading.assessments;
 
   const [selectedStudent, setSelectedStudent] = useState('');
-  const [heatmapDate, setHeatmapDate] = useState(new Date().toISOString().split('T')[0]);
   const analytics = useMemo(() => createMonitoringAnalytics({
     students,
     logs: rawLogs,
@@ -58,10 +53,6 @@ function Dashboard({ authorization }) {
   const activeStudentId = studentOptions.some(student => student.id === selectedStudent)
     ? selectedStudent
     : (studentOptions[0]?.id ?? '');
-  const roomStatus = useMemo(
-    () => analytics.getRoomStatus({ date: heatmapDate }),
-    [analytics, heatmapDate],
-  );
   const individual = useMemo(
     () => analytics.getIndividual({ studentId: activeStudentId }),
     [analytics, activeStudentId],
@@ -78,90 +69,6 @@ function Dashboard({ authorization }) {
     error: 'Failed',
   }[dataStatus];
   const dataBlocked = dataStatus === 'degraded' || dataStatus === 'error';
-
-  // ==========================================
-  // RENDERS
-  // ==========================================
-  const renderHeatmap = () => {
-    const { rooms } = roomStatus;
-
-    return (
-      <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm min-h-[600px]">
-        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 border-b pb-6">
-          <h3 className="text-xl font-black text-slate-800">Heatmap สถานะรายห้องพัก</h3>
-          <div className="flex items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
-            <Calendar size={18} className="text-slate-400 mr-3" />
-            <span className="text-sm font-bold text-slate-600 mr-3">เลือกวันที่:</span>
-            <input type="date" className="bg-white border rounded-lg px-3 py-1.5 text-sm font-bold outline-none" value={heatmapDate} onChange={(e) => setHeatmapDate(e.target.value)} />
-          </div>
-        </div>
-        
-        <div className="flex space-x-6 text-xs text-slate-500 mb-6 bg-slate-50 inline-flex p-3 rounded-lg border border-slate-100">
-           <span><b className="text-blue-600">D</b> = Depression (ซึมเศร้า)</span>
-           <span><b className="text-orange-500">A</b> = Anxiety (วิตกกังวล)</span>
-           <span><b className="text-rose-500">S</b> = Stress (ความเครียด)</span>
-           <span><b className="text-amber-600">CF</b> = ค่าจากวันที่ก่อนหน้า</span>
-        </div>
-
-        {loadingStudents || loadingLogs || loadingAssessments ? (
-          <div className="space-y-6">{[1, 2, 3].map(i => <Skeleton key={i} className="h-40" />)}</div>
-        ) : rooms.length > 0 ? rooms.map(room => (
-          <div key={room.name} className="mb-10">
-            <h4 className="text-lg font-bold mb-4 text-blue-700 bg-blue-50/50 inline-block px-4 py-1 rounded-full border border-blue-100">ห้องพัก: {room.name}</h4>
-            <div className="overflow-x-auto rounded-xl border border-slate-100">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50/80 text-slate-500">
-                  <tr>
-                    <th className="p-4 font-bold">ID</th>
-                    <th className="p-4 font-bold">ชื่อ-สกุล</th>
-                    <th className="p-4 font-bold text-center">Self</th>
-                    <th className="p-4 font-bold text-center">Buddy</th>
-                    <th className="p-4 font-bold text-center">Command</th>
-                    <th className="p-4 font-bold text-center text-purple-600 border-l">CD-RISC</th>
-                    <th className="p-4 font-bold text-center text-emerald-600">GRIT</th>
-                    <th className="p-4 font-bold text-center text-blue-600" title="Depression (ซึมเศร้า)">D</th>
-                    <th className="p-4 font-bold text-center text-orange-500" title="Anxiety (วิตกกังวล)">A</th>
-                    <th className="p-4 font-bold text-center text-rose-500" title="Stress (ความเครียด)">S</th>
-                    <th className="p-4 font-bold text-center border-l">ป่วยกาย</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {room.students.map(({ student: s, observation: stL, assessment: stA, physicalLabel }) => {
-                    return (
-                      <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition">
-                        <td className="p-4 font-medium text-slate-400">{s.id}</td>
-                        <td className="p-4 font-bold text-slate-700">{s.name}</td>
-                        <td className="p-4 text-center">
-                          <div className="w-6 h-6 mx-auto rounded-md shadow-inner" style={{ backgroundColor: COLORS[stL?.self] || '#f1f5f9' }}></div>
-                        </td>
-                        <td className="p-4 text-center">
-                          <div className="w-6 h-6 mx-auto rounded-md shadow-inner" style={{ backgroundColor: COLORS[stL?.buddy] || '#f1f5f9' }}></div>
-                          {stL?.isBuddyCF && <span className="mt-1 block text-[9px] font-bold text-amber-600">CF {stL.buddySourceDate}</span>}
-                        </td>
-                        <td className="p-4 text-center">
-                          <div className="w-6 h-6 mx-auto rounded-md shadow-inner" style={{ backgroundColor: COLORS[stL?.command] || '#f1f5f9' }}></div>
-                          {stL?.isCommandCF && <span className="mt-1 block text-[9px] font-bold text-amber-600">CF {stL.commandSourceDate}</span>}
-                        </td>
-                        <td className="p-4 text-center font-bold text-slate-600 border-l">
-                          {stA?.cd_risc ?? '-'}
-                          {stA && <span className="mt-1 block text-[9px] font-medium text-slate-400">Wk {stA.week}</span>}
-                        </td>
-                        <td className="p-4 text-center font-bold text-slate-600">{stA?.grit ?? '-'}</td>
-                        <td className="p-4 text-center font-bold text-slate-600">{stA?.dass_d ?? '-'}</td>
-                        <td className="p-4 text-center font-bold text-slate-600">{stA?.dass_a ?? '-'}</td>
-                        <td className="p-4 text-center font-bold text-slate-600">{stA?.dass_s ?? '-'}</td>
-                        <td className="p-4 text-center font-bold text-slate-600 border-l">{physicalLabel}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )) : <div className="text-center p-20 text-slate-400">ยังไม่มีข้อมูล นรม. ในระบบ</div>}
-      </div>
-    );
-  };
 
   const renderIndividual = () => {
     if (loadingStudents) return <div className="space-y-6"><Skeleton className="h-24" /><Skeleton className="h-72" /></div>;
@@ -349,7 +256,7 @@ function Dashboard({ authorization }) {
           ) : (
             <>
               {activeTab === 'overview' && <OverviewScreen analytics={analytics} loading={loading} />}
-              {activeTab === 'heatmap' && renderHeatmap()}
+              {activeTab === 'heatmap' && <RoomStatusScreen analytics={analytics} loading={loading} />}
               {activeTab === 'individual' && renderIndividual()}
             </>
           )}

@@ -48,7 +48,7 @@ const SYNC_TIME_FORMATTER = new Intl.DateTimeFormat('th-TH', {
 const DATA_STATUS_LABELS = {
   idle: 'Starting',
   connecting: 'Connecting',
-  ready: 'Current',
+  ready: 'Verified',
   degraded: 'Incomplete',
   error: 'Failed',
 };

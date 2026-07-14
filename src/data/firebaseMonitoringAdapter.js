@@ -9,7 +9,7 @@ import {
 
 import { db } from '../config/firestore.js';
 import { decodeAssessment, decodeLog, decodeStudent } from '../domain/records.js';
-import { decodeSnapshot } from './decodeSnapshot.js';
+import { subscribeVerifiedQuery } from './subscribeVerifiedQuery.js';
 
 export const MONITORING_LIMITS = Object.freeze({
   students: 250,
@@ -53,25 +53,15 @@ export function createFirebaseMonitoringAdapter({
             limit(recordLimit + 1),
           );
 
-          unsubscribe.push(onSnapshot(
+          unsubscribe.push(subscribeVerifiedQuery({
+            streamName: stream.name,
             streamQuery,
-            snapshot => {
-              if (!active) return;
-              const truncated = snapshot.docs.length > recordLimit;
-              const decoded = decodeSnapshot(
-                { docs: snapshot.docs.slice(0, recordLimit) },
-                stream.decoder,
-              );
-              observer.next(stream.name, {
-                ...decoded,
-                truncated,
-                receivedAt: clock(),
-              });
-            },
-            error => {
-              if (active) observer.error(stream.name, { code: error?.code || 'unknown' });
-            },
-          ));
+            decoder: stream.decoder,
+            recordLimit,
+            observer,
+            listen: onSnapshot,
+            clock,
+          }));
         }
       } catch (error) {
         active = false;

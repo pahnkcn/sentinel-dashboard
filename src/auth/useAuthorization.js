@@ -7,6 +7,7 @@ import {
 } from 'firebase/auth';
 
 import { auth } from '../config/firebase.js';
+import { getPublicAuthErrorCode, getPublicAuthMessage } from './authErrors.js';
 import { getAuthorizedRole } from './roles.js';
 
 const provider = new GoogleAuthProvider();
@@ -19,11 +20,8 @@ const INITIAL_STATE = Object.freeze({
   message: null,
 });
 
-function publicAuthMessage(error) {
-  if (error?.code === 'auth/popup-closed-by-user') {
-    return 'ยกเลิกการเข้าสู่ระบบแล้ว';
-  }
-  return 'ไม่สามารถตรวจสอบสิทธิ์ได้ กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ';
+function reportAuthFailure(context, error) {
+  console.error(`${context}: ${getPublicAuthErrorCode(error)}`);
 }
 
 export function useAuthorization() {
@@ -58,23 +56,23 @@ export function useAuthorization() {
               });
         } catch (error) {
           if (!active || sequence !== tokenSequence) return;
-          console.error('Authorization check failed', error);
+          reportAuthFailure('Authorization check failed', error);
           setState({
             status: 'error',
             user,
             role: null,
-            message: publicAuthMessage(error),
+            message: getPublicAuthMessage(error),
           });
         }
       },
       error => {
         if (!active) return;
-        console.error('Authentication observer failed', error);
+        reportAuthFailure('Authentication observer failed', error);
         setState({
           status: 'error',
           user: null,
           role: null,
-          message: publicAuthMessage(error),
+          message: getPublicAuthMessage(error),
         });
       },
     );
@@ -91,12 +89,12 @@ export function useAuthorization() {
     try {
       await signInWithPopup(auth, provider);
     } catch (error) {
-      console.error('Sign-in failed', error);
+      reportAuthFailure('Sign-in failed', error);
       setState({
         status: 'signed-out',
         user: null,
         role: null,
-        message: publicAuthMessage(error),
+        message: getPublicAuthMessage(error),
       });
     }
   }, []);
@@ -105,11 +103,11 @@ export function useAuthorization() {
     try {
       await firebaseSignOut(auth);
     } catch (error) {
-      console.error('Sign-out failed', error);
+      reportAuthFailure('Sign-out failed', error);
       setState(current => ({
         ...current,
         status: 'error',
-        message: publicAuthMessage(error),
+        message: getPublicAuthMessage(error),
       }));
     }
   }, []);

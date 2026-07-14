@@ -8,17 +8,17 @@ service cloud.firestore {
         && request.auth.token.sentinelRole in ['clinician', 'admin'];
     }
 
-    match /students/{document=**} {
+    match /students/{studentId} {
       allow read: if hasVerifiedClinicalRole();
       allow write: if false;
     }
 
-    match /logs/{document=**} {
+    match /logs/{logId} {
       allow read: if hasVerifiedClinicalRole();
       allow write: if false;
     }
 
-    match /assessments/{document=**} {
+    match /assessments/{assessmentId} {
       allow read: if hasVerifiedClinicalRole();
       allow write: if false;
     }

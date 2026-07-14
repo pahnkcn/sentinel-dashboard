@@ -40,6 +40,7 @@ before(async () => {
 
     for (const collectionName of PROTECTED_COLLECTIONS) {
       await setDoc(doc(db, collectionName, 'seed'), { seeded: true });
+      await setDoc(doc(db, collectionName, 'seed', 'nested', 'secret'), { seeded: true });
     }
 
     await setDoc(doc(db, 'private', 'seed'), { seeded: true });
@@ -126,4 +127,15 @@ test('unknown collections remain denied for privileged users', async () => {
 
   await assertFails(getDoc(doc(db, 'private', 'seed')));
   await assertFails(setDoc(doc(db, 'private', 'new'), { secret: true }));
+});
+
+test('privileged users cannot read undeclared nested subcollections', async () => {
+  const db = testEnvironment.authenticatedContext('nested-admin', {
+    email_verified: true,
+    sentinelRole: 'admin',
+  }).firestore();
+
+  for (const collectionName of PROTECTED_COLLECTIONS) {
+    await assertFails(getDoc(doc(db, collectionName, 'seed', 'nested', 'secret')));
+  }
 });

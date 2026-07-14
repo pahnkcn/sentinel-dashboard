@@ -16,7 +16,9 @@ deterministically, calculate population statistics and alerts from observed
 values only, and exclude logs after the explicit local-date as-of cutoff.
 Apply Buddy and Command LOCF chronologically within one student only for
 labeled presentation continuity. Prevent historical room views from selecting
-future assessments.
+future assessments. Select DASS and resilience results independently so a
+DASS-only week 4 record cannot mask the latest valid CD-RISC and GRIT scores;
+retain the source week in the projection.
 
 Expose screen-shaped projections through a small Interface. Keep the Module
 free of React and Firebase.

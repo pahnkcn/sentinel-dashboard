@@ -65,7 +65,13 @@ function RoomSection({ room }) {
             </tr>
           </thead>
           <tbody>
-            {room.students.map(({ student, observation, assessment, physicalLabel }) => (
+            {room.students.map(({
+              student,
+              observation,
+              assessment,
+              resilienceAssessment,
+              physicalLabel,
+            }) => (
               <tr key={student.id} className="border-b border-slate-50 transition hover:bg-slate-50/50">
                 <td className="p-4 font-medium text-slate-400">{student.id}</td>
                 <td className="p-4 font-bold text-slate-700">{student.name}</td>
@@ -81,14 +87,21 @@ function RoomSection({ room }) {
                   sourceDate={observation?.commandSourceDate}
                 />
                 <td className="border-l p-4 text-center font-bold text-slate-600">
-                  {assessment?.cd_risc ?? '-'}
-                  {assessment && (
+                  {resilienceAssessment?.cd_risc ?? '-'}
+                  {resilienceAssessment && (
                     <span className="mt-1 block text-[9px] font-medium text-slate-400">
-                      Wk {assessment.week}
+                      Wk {resilienceAssessment.week}
                     </span>
                   )}
                 </td>
-                <td className="p-4 text-center font-bold text-slate-600">{assessment?.grit ?? '-'}</td>
+                <td className="p-4 text-center font-bold text-slate-600">
+                  {resilienceAssessment?.grit ?? '-'}
+                  {resilienceAssessment && (
+                    <span className="mt-1 block text-[9px] font-medium text-slate-400">
+                      Wk {resilienceAssessment.week}
+                    </span>
+                  )}
+                </td>
                 <td className="p-4 text-center font-bold text-slate-600">{assessment?.dass_d ?? '-'}</td>
                 <td className="p-4 text-center font-bold text-slate-600">{assessment?.dass_a ?? '-'}</td>
                 <td className="p-4 text-center font-bold text-slate-600">{assessment?.dass_s ?? '-'}</td>

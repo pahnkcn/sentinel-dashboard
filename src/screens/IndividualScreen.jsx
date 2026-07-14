@@ -44,7 +44,7 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
     );
   }
 
-  const { student, latestAssessment } = individual;
+  const { student, latestResilience } = individual;
 
   return (
     <div className="space-y-6">
@@ -97,18 +97,21 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
           </dl>
 
           <div className="mt-4 border-t pt-4">
-            <h4 className="mb-3 flex items-center font-bold text-purple-600">ผลประเมินล่าสุด (Latest)</h4>
+            <h4 className="mb-3 flex items-center font-bold text-purple-600">
+              ผลความยืดหยุ่นล่าสุด
+              {latestResilience && ` (Wk ${latestResilience.week})`}
+            </h4>
             <dl className="space-y-2 rounded-lg border border-purple-100 bg-purple-50 p-3 text-sm">
               <div className="flex justify-between">
                 <dt>CD-RISC:</dt>
                 <dd className="font-bold text-purple-700">
-                  {latestAssessment?.cd_risc ?? '-'} ({latestAssessment?.cdRiscInterpretation ?? '-'})
+                  {latestResilience?.cd_risc ?? '-'} ({latestResilience?.cdRiscInterpretation ?? '-'})
                 </dd>
               </div>
               <div className="flex justify-between">
                 <dt>GRIT:</dt>
                 <dd className="font-bold text-emerald-600">
-                  {latestAssessment?.grit ?? '-'} ({latestAssessment?.gritInterpretation ?? '-'})
+                  {latestResilience?.grit ?? '-'} ({latestResilience?.gritInterpretation ?? '-'})
                 </dd>
               </div>
             </dl>

@@ -169,6 +169,7 @@ test('room status never uses an assessment from a later week', () => {
     ],
     assessments: [
       assessment('baseline', 'a', 0, { cd_risc: 20, grit: 12 }),
+      assessment('week4_dass', 'a', 4, { dass_d: 3, dass_a: 4, dass_s: 5 }),
       assessment('future', 'a', 8, { cd_risc: 35, grit: 28 }),
     ],
   });
@@ -176,8 +177,10 @@ test('room status never uses an assessment from a later week', () => {
   const row = analytics.getRoomStatus({ date: '2026-06-02' }).rooms[0].students[0];
   const noObservation = analytics.getRoomStatus({ date: '2026-05-01' }).rooms[0].students[0];
 
-  assert.equal(row.assessment.week, 0);
-  assert.equal(row.assessment.cd_risc, 20);
+  assert.equal(row.assessment.week, 4);
+  assert.equal(row.assessment.dass_d, 3);
+  assert.equal(row.resilienceAssessment.week, 0);
+  assert.equal(row.resilienceAssessment.cd_risc, 20);
   assert.equal(row.physicalLabel, 'บาดเจ็บเล็กน้อย');
   assert.equal(noObservation.assessment, null);
 });
@@ -219,12 +222,27 @@ test('interprets score boundaries and exposes scheduled projections', () => {
   const individual = analytics.getIndividual({ studentId: 'a' });
   const overview = analytics.getOverview();
 
-  assert.equal(individual.latestAssessment.cdRiscInterpretation, 'สูง (High)');
-  assert.equal(individual.latestAssessment.gritInterpretation, 'สูง (High)');
+  assert.equal(individual.latestResilience.cdRiscInterpretation, 'สูง (High)');
+  assert.equal(individual.latestResilience.gritInterpretation, 'สูง (High)');
   assert.equal(individual.drawingNote, 'baseline note');
   assert.deepEqual(individual.resilienceTrend.map(item => item.week), [0, 8, 16]);
   assert.deepEqual(overview.dassTrend.map(item => item.week), ['Wk 0', 'Wk 4', 'Wk 8', 'Wk 16']);
   assert.deepEqual(overview.resilienceTrend.map(item => item.week), ['Wk 0', 'Wk 8', 'Wk 16']);
+});
+
+test('keeps latest resilience scores when the newest assessment is DASS-only', () => {
+  const analytics = createMonitoringAnalytics({
+    students: [student('a')],
+    assessments: [
+      assessment('week0', 'a', 0, { cd_risc: 30, grit: 20 }),
+      assessment('week4', 'a', 4, { dass_d: 4, dass_a: 3, dass_s: 2 }),
+    ],
+  });
+
+  const individual = analytics.getIndividual({ studentId: 'a' });
+  assert.equal(individual.latestResilience.week, 0);
+  assert.equal(individual.latestResilience.cd_risc, 30);
+  assert.equal(individual.latestResilience.grit, 20);
 });
 
 test('returns null for an unknown individual', () => {

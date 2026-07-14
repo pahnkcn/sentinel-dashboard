@@ -119,13 +119,17 @@ function interpretPhysical(level) {
   return '-';
 }
 
-function latestAtOrBefore(assessments, week) {
+function latestAtOrBefore(assessments, week, predicate = () => true) {
   let latest = null;
   for (const assessment of assessments) {
     if (assessment.week > week) break;
-    latest = assessment;
+    if (predicate(assessment)) latest = assessment;
   }
   return latest;
+}
+
+function hasResilienceScores(assessment) {
+  return Number.isFinite(assessment.cd_risc) && Number.isFinite(assessment.grit);
 }
 
 function createPopulationTrend(logs) {
@@ -268,10 +272,18 @@ export function createMonitoringAnalytics({
               const assessment = observation
                 ? latestAtOrBefore(studentAssessments, observation.week)
                 : null;
+              const resilienceAssessment = observation
+                ? latestAtOrBefore(
+                    studentAssessments,
+                    observation.week,
+                    hasResilienceScores,
+                  )
+                : null;
               return {
                 student,
                 observation,
                 assessment,
+                resilienceAssessment,
                 physicalLabel: observation
                   ? interpretPhysical(observation.physicalInjury)
                   : '-',
@@ -290,7 +302,7 @@ export function createMonitoringAnalytics({
         .filter(log => log.studentId === studentId)
         .sort(compareByDateThenId);
       const studentAssessments = (assessmentsByStudent.get(studentId) ?? []).slice();
-      const latestAssessment = studentAssessments.at(-1) ?? null;
+      const latestResilience = studentAssessments.filter(hasResilienceScores).at(-1) ?? null;
       const baselineAssessment = studentAssessments.find(assessment => assessment.week === 0);
 
       return {
@@ -313,11 +325,11 @@ export function createMonitoringAnalytics({
         resilienceTrend: studentAssessments.filter(assessment => (
           RESILIENCE_WEEKS.includes(assessment.week)
         )),
-        latestAssessment: latestAssessment
+        latestResilience: latestResilience
           ? {
-              ...latestAssessment,
-              cdRiscInterpretation: interpretCdRisc(latestAssessment.cd_risc),
-              gritInterpretation: interpretGrit(latestAssessment.grit),
+              ...latestResilience,
+              cdRiscInterpretation: interpretCdRisc(latestResilience.cd_risc),
+              gritInterpretation: interpretGrit(latestResilience.grit),
             }
           : null,
         drawingNote: baselineAssessment?.drawing_note || 'ไม่มีข้อมูล',

@@ -96,6 +96,7 @@ verified-query subscription are test Seams for lifecycle behavior.
 - an explicit local-date as-of cutoff that withholds future-dated logs;
 - sample mean and sample standard deviation;
 - scheduled DASS-21, CD-RISC, and GRIT projections;
+- per-instrument latest selection with the source week retained;
 - historical room views that never use a future assessment;
 - individual interpretation labels.
 

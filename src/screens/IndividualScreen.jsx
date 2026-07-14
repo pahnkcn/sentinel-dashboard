@@ -11,9 +11,32 @@ import {
 } from 'recharts';
 import { Activity, ShieldCheck, User } from 'lucide-react';
 import { Skeleton } from '../ui/Skeleton.jsx';
+import { createFourColorTooltipRows } from '../ui/fourColorPresentation.js';
 
 function WeekTick(value) {
   return `Wk ${value}`;
+}
+
+const VIEWPOINT_COLORS = {
+  self: '#3b82f6',
+  buddy: '#10b981',
+  command: '#f59e0b',
+};
+
+function FourColorTooltip({ active, payload }) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+
+  return (
+    <div className="rounded-lg border bg-white p-3 text-xs shadow-xl">
+      <p className="mb-2 border-b pb-1 font-bold">{point.date}</p>
+      {createFourColorTooltipRows(point).map(row => (
+        <p key={row.field} style={{ color: VIEWPOINT_COLORS[row.field] }}>
+          {row.label}: {row.value ?? '-'} · {row.source}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 export const IndividualScreen = memo(function IndividualScreen({ analytics, loading }) {
@@ -139,9 +162,9 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="show" tick={{ fontSize: 10 }} />
                     <YAxis domain={[1, 4]} ticks={[1, 2, 3, 4]} />
-                    <RechartsTooltip />
-                    <Line type="stepAfter" dataKey="self" stroke="#3b82f6" strokeWidth={3} dot={false} />
-                    <Line type="stepAfter" dataKey="buddy" stroke="#10b981" strokeWidth={3} dot={false} />
+                    <RechartsTooltip content={<FourColorTooltip />} />
+                    <Line type="stepAfter" dataKey="self" name="Self" stroke="#3b82f6" strokeWidth={3} dot={false} />
+                    <Line type="stepAfter" dataKey="buddy" name="Buddy" stroke="#10b981" strokeWidth={3} dot={false} />
                     <Line type="stepAfter" dataKey="command" name="Command" stroke="#f59e0b" strokeWidth={3} dot={false} />
                     <Brush dataKey="date" height={20} stroke="#cbd5e1" travellerWidth={10} />
                   </LineChart>

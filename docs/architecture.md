@@ -118,6 +118,9 @@ not download Firestore or chart code.
 Screen error boundaries replace failed output with a generic safe message and
 never reflect exception details into the rendered UI. React root handlers log
 only a fixed failure category, never the exception or component stack.
+Room and individual workflows label every carried-forward Buddy or Command
+value with its source date so presentation continuity cannot be mistaken for a
+new observation.
 
 ## Dependency rules
 

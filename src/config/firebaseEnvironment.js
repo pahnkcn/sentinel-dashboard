@@ -68,8 +68,8 @@ export function readFirebaseEnvironment(environment, { mode = 'production' } = {
   if (mode === 'production' && useEmulators) {
     throw new Error('Production mode cannot use Firebase emulators');
   }
-  if (mode === 'production' && (!appCheckSiteKey || PLACEHOLDER_VALUE.test(appCheckSiteKey))) {
-    throw new Error('Production mode requires VITE_FIREBASE_APPCHECK_SITE_KEY');
+  if (!useEmulators && (!appCheckSiteKey || PLACEHOLDER_VALUE.test(appCheckSiteKey))) {
+    throw new Error('Remote Firebase requires VITE_FIREBASE_APPCHECK_SITE_KEY');
   }
 
   return Object.freeze({

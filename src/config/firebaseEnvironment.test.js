@@ -64,12 +64,19 @@ test('forces emulators in development and forbids them in production', () => {
   assert.equal(development.useEmulators, true);
 });
 
-test('requires App Check configuration in production', () => {
+test('requires App Check configuration for every remote environment', () => {
   assert.throws(
     () => readFirebaseEnvironment({
       ...VALID_ENVIRONMENT,
       VITE_FIREBASE_APPCHECK_SITE_KEY: '',
     }),
+    /VITE_FIREBASE_APPCHECK_SITE_KEY/,
+  );
+  assert.throws(
+    () => readFirebaseEnvironment({
+      ...VALID_ENVIRONMENT,
+      VITE_FIREBASE_APPCHECK_SITE_KEY: '',
+    }, { mode: 'staging' }),
     /VITE_FIREBASE_APPCHECK_SITE_KEY/,
   );
 });

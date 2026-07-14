@@ -1,24 +1,22 @@
 import { useState, useMemo } from 'react';
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Brush
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Brush
 } from 'recharts';
 import { 
-  LayoutDashboard, Users, User, Activity, Clock, HeartPulse, ShieldCheck, BookOpen, Calendar
+  LayoutDashboard, Users, User, Activity, Clock, HeartPulse, ShieldCheck, Calendar
 } from 'lucide-react';
 import { AccessGate } from './auth/AccessGate.jsx';
 import { useAuthorization } from './auth/useAuthorization.js';
 import { firebaseConfig } from './config/firebase.js';
 import { useMonitoringData } from './data/useMonitoringData.js';
 import { createMonitoringAnalytics } from './domain/monitoringAnalytics.js';
+import { OverviewScreen } from './screens/OverviewScreen.jsx';
+import { Skeleton } from './ui/Skeleton.jsx';
 
 // ==========================================
 // HELPERS & CONSTANTS
 // ==========================================
 const COLORS = { 1: '#22c55e', 2: '#eab308', 3: '#f97316', 4: '#ef4444' };
-
-const Skeleton = ({ className = '' }) => (
-  <div className={`animate-pulse bg-slate-200/60 rounded-xl ${className}`} />
-);
 
 export default function App() {
   const authorization = useAuthorization();
@@ -49,8 +47,6 @@ function Dashboard({ authorization }) {
   const loadingLogs = loading.logs;
   const loadingAssessments = loading.assessments;
 
-  const [genderFilter, setGenderFilter] = useState('all');
-
   const [selectedStudent, setSelectedStudent] = useState('');
   const [heatmapDate, setHeatmapDate] = useState(new Date().toISOString().split('T')[0]);
   const analytics = useMemo(() => createMonitoringAnalytics({
@@ -62,10 +58,6 @@ function Dashboard({ authorization }) {
   const activeStudentId = studentOptions.some(student => student.id === selectedStudent)
     ? selectedStudent
     : (studentOptions[0]?.id ?? '');
-  const overview = useMemo(
-    () => analytics.getOverview({ gender: genderFilter }),
-    [analytics, genderFilter],
-  );
   const roomStatus = useMemo(
     () => analytics.getRoomStatus({ date: heatmapDate }),
     [analytics, heatmapDate],
@@ -90,124 +82,6 @@ function Dashboard({ authorization }) {
   // ==========================================
   // RENDERS
   // ==========================================
-  const renderOverview = () => {
-    return (
-      <div className="space-y-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          <h3 className="text-lg font-bold mb-4 flex items-center text-slate-800"><BookOpen className="mr-2 text-blue-500" size={20} /> Demographic & Alert Status</h3>
-          {loadingStudents ? (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                <p className="text-xs font-bold text-slate-500 mb-1">นรม. ในระบบ</p>
-                <p className="text-2xl font-black text-slate-800">{overview.totalStudents}</p>
-              </div>
-              <div className="bg-rose-50 p-4 rounded-xl border border-rose-100">
-                <p className="text-xs font-bold text-rose-500 mb-1">วิกฤต 3 ด้าน (แดงล้วน)</p>
-                <p className="text-2xl font-black text-rose-700">{overview.alerts.red3}</p>
-              </div>
-              <div className="bg-orange-50 p-4 rounded-xl border border-orange-100">
-                <p className="text-xs font-bold text-orange-600 mb-1">เฝ้าระวัง (Self แดง + 1)</p>
-                <p className="text-2xl font-black text-orange-700">{overview.alerts.redSelfPlus}</p>
-              </div>
-              <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
-                <p className="text-xs font-bold text-purple-600 mb-1">ติดตามโดยจิตเวช</p>
-                <p className="text-2xl font-black text-purple-700">{overview.alerts.psychiatricCare}</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold flex items-center text-slate-800"><Activity className="mr-2 text-blue-500" size={20} /> Population Trend: 4 Colors</h3>
-            <div className="flex bg-slate-100 p-1 rounded-lg">
-              {['all', 'ชาย', 'หญิง'].map(g => (
-                <button key={g} onClick={() => setGenderFilter(g)} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${genderFilter === g ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>
-                  {g === 'all' ? 'ทั้งหมด' : g}
-                </button>
-              ))}
-            </div>
-          </div>
-          {loadingLogs ? <Skeleton className="h-72" /> : (
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={overview.populationTrend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={0} />
-                  <YAxis domain={[1, 4]} ticks={[1, 2, 3, 4]} />
-                  <RechartsTooltip content={({ active, payload, label }) => active && payload ? (
-                    <div className="bg-white p-3 border rounded-lg shadow-xl text-xs">
-                      <p className="font-bold mb-2 border-b pb-1">{label} (N={overview.filteredStudentCount})</p>
-                      {payload.map((e, i) => <p key={i} style={{ color: e.color }}>{e.name}: {e.value} (SD: {e.payload[`${e.dataKey}_sd`]})</p>)}
-                    </div>
-                  ) : null} />
-                  <Legend iconType="circle" />
-                  <Line type="monotone" dataKey="self" name="Self" stroke="#3b82f6" strokeWidth={3} dot={{ r: 3 }} connectNulls />
-                  <Line type="monotone" dataKey="buddy" name="Buddy" stroke="#10b981" strokeWidth={3} dot={{ r: 3 }} connectNulls />
-                  <Line type="monotone" dataKey="command" name="Command" stroke="#f59e0b" strokeWidth={3} dot={{ r: 3 }} connectNulls />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-            <h3 className="text-lg font-bold mb-6 flex items-center text-slate-800"><ShieldCheck className="mr-2 text-rose-500" size={20} /> DASS-21 (Mean 1-5)</h3>
-            {loadingAssessments ? <Skeleton className="h-72" /> : (
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={overview.dassTrend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={0} />
-                    <YAxis domain={[1, 5]} ticks={[1,2,3,4,5]} />
-                    <RechartsTooltip content={({ active, payload, label }) => active && payload ? (
-                      <div className="bg-white p-3 border rounded-lg shadow-xl text-xs">
-                        <p className="font-bold mb-2 border-b pb-1">{label}</p>
-                        {payload.map((e, i) => e.value ? <p key={i} style={{ color: e.color }}>{e.name}: {e.value} (SD: {e.payload[`${e.dataKey}_sd`]})</p> : null)}
-                      </div>
-                    ) : null} />
-                    <Legend iconType="circle" />
-                    <Line type="monotone" dataKey="dass_d" name="Depression" stroke="#3b82f6" strokeWidth={3} dot={{ r: 5 }} connectNulls />
-                    <Line type="monotone" dataKey="dass_a" name="Anxiety" stroke="#f59e0b" strokeWidth={3} dot={{ r: 5 }} connectNulls />
-                    <Line type="monotone" dataKey="dass_s" name="Stress" stroke="#ef4444" strokeWidth={3} dot={{ r: 5 }} connectNulls />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-          
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-            <h3 className="text-lg font-bold mb-6 flex items-center text-slate-800"><ShieldCheck className="mr-2 text-purple-500" size={20} /> CD-RISC & GRIT</h3>
-            {loadingAssessments ? <Skeleton className="h-72" /> : (
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={overview.resilienceTrend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={0} />
-                    <YAxis yAxisId="left" domain={[0, 40]} label={{ value: 'CD-RISC', angle: -90, position: 'insideLeft', style: { fontSize: 10 } }} />
-                    <YAxis yAxisId="right" orientation="right" domain={[0, 32]} label={{ value: 'GRIT', angle: 90, position: 'insideRight', style: { fontSize: 10 } }} />
-                    <RechartsTooltip content={({ active, payload, label }) => active && payload ? (
-                      <div className="bg-white p-3 border rounded-lg shadow-xl text-xs">
-                        <p className="font-bold mb-2 border-b pb-1">{label}</p>
-                        {payload.map((e, i) => e.value ? <p key={i} style={{ color: e.color }}>{e.name}: {e.value} (SD: {e.payload[`${e.dataKey}_sd`]})</p> : null)}
-                      </div>
-                    ) : null} />
-                    <Legend iconType="circle" />
-                    <Line yAxisId="left" type="monotone" dataKey="cd_risc" name="CD-RISC" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 5 }} connectNulls />
-                    <Line yAxisId="right" type="monotone" dataKey="grit" name="GRIT" stroke="#10b981" strokeWidth={3} dot={{ r: 5 }} connectNulls strokeDasharray="5 5" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const renderHeatmap = () => {
     const { rooms } = roomStatus;
 
@@ -474,7 +348,7 @@ function Dashboard({ authorization }) {
             </section>
           ) : (
             <>
-              {activeTab === 'overview' && renderOverview()}
+              {activeTab === 'overview' && <OverviewScreen analytics={analytics} loading={loading} />}
               {activeTab === 'heatmap' && renderHeatmap()}
               {activeTab === 'individual' && renderIndividual()}
             </>

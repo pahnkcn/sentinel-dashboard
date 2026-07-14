@@ -11,6 +11,7 @@ function initialState(status = 'idle') {
     logs: [],
     assessments: [],
     issues: perStream(() => []),
+    integrityIssues: perStream(() => []),
     errors: perStream(() => null),
     loading: perStream(() => true),
     truncated: perStream(() => false),
@@ -33,14 +34,33 @@ function publicStreamError(stream, error) {
   };
 }
 
+function deriveIntegrityIssues(state, isLoaded) {
+  const integrityIssues = perStream(() => []);
+  if (!isLoaded) return integrityIssues;
+
+  const studentIds = new Set(state.students.map(student => student.id));
+  for (const stream of ['logs', 'assessments']) {
+    integrityIssues[stream] = state[stream]
+      .filter(record => !studentIds.has(record.studentId))
+      .map(record => ({
+        documentId: record.id,
+        issues: [{ field: 'studentId', message: 'must reference a loaded student' }],
+      }));
+  }
+  return integrityIssues;
+}
+
 function deriveState(state) {
-  const issueCount = MONITORING_STREAMS.reduce(
-    (total, stream) => total + state.issues[stream].length,
-    0,
-  );
   const truncatedStreams = MONITORING_STREAMS.filter(stream => state.truncated[stream]);
   const hasError = MONITORING_STREAMS.some(stream => state.errors[stream] !== null);
   const isLoaded = MONITORING_STREAMS.every(stream => !state.loading[stream]);
+  const integrityIssues = deriveIntegrityIssues(state, isLoaded);
+  const issueCount = MONITORING_STREAMS.reduce(
+    (total, stream) => (
+      total + state.issues[stream].length + integrityIssues[stream].length
+    ),
+    0,
+  );
   const timestamps = MONITORING_STREAMS
     .map(stream => state[`${stream}UpdatedAt`])
     .filter(value => Number.isFinite(value));
@@ -54,6 +74,7 @@ function deriveState(state) {
     ...state,
     status,
     issueCount,
+    integrityIssues,
     truncatedStreams,
     lastUpdatedAt: timestamps.length > 0 ? Math.max(...timestamps) : null,
   };

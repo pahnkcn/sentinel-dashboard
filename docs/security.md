@@ -25,6 +25,7 @@ monitoring decisions.
 | Client mutation or fixture injection | All Firestore client writes denied; no runtime seeder |
 | Future nested collections inheriting access | Rules authorize only one top-level document segment |
 | Malformed or prototype-sensitive records | Strict decoders, safe IDs, known fields, quarantine |
+| Orphan logs or assessments | Post-load referential-integrity checks degrade the whole dataset until every `studentId` resolves |
 | Partial or unbounded data | Bounded listeners; truncation and invalid records pause analytics |
 | Derived or future observations changing current decisions | Population statistics and alerts use observed values only; LOCF stays presentation-only; logs after the local as-of date are withheld |
 | Cached or stale data after connection loss | Cache-only snapshots are rejected; initial server verification times out after 15 seconds; later cache transitions and stream errors pause analytics; the exact last server-confirmed time remains visible |

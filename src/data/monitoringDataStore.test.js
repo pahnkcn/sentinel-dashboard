@@ -18,8 +18,16 @@ test('becomes ready after all streams arrive in any order', () => {
   assert.equal(adapter.connectionCount, 1);
   assert.equal(store.getSnapshot().status, 'connecting');
 
-  adapter.emit('logs', { records: [{ id: 'log' }], issues: [], receivedAt: 20 });
-  adapter.emit('assessments', { records: [{ id: 'assessment' }], issues: [], receivedAt: 10 });
+  adapter.emit('logs', {
+    records: [{ id: 'log', studentId: 'student' }],
+    issues: [],
+    receivedAt: 20,
+  });
+  adapter.emit('assessments', {
+    records: [{ id: 'assessment', studentId: 'student' }],
+    issues: [],
+    receivedAt: 10,
+  });
   assert.equal(store.getSnapshot().status, 'connecting');
 
   adapter.emit('students', { records: [{ id: 'student' }], issues: [], receivedAt: 30 });
@@ -46,6 +54,43 @@ test('marks invalid or truncated data as degraded', () => {
   assert.equal(snapshot.status, 'degraded');
   assert.equal(snapshot.issueCount, 1);
   assert.deepEqual(snapshot.truncatedStreams, ['logs']);
+  unsubscribe();
+});
+
+test('degrades orphan records and recovers when their student arrives', () => {
+  const { adapter, store, unsubscribe } = connectStore();
+
+  adapter.emit('students', { records: [], issues: [], receivedAt: 1 });
+  adapter.emit('logs', {
+    records: [{ id: 'orphan-log', studentId: 'missing' }],
+    issues: [],
+    receivedAt: 1,
+  });
+  adapter.emit('assessments', {
+    records: [{ id: 'orphan-assessment', studentId: 'missing' }],
+    issues: [],
+    receivedAt: 1,
+  });
+
+  let snapshot = store.getSnapshot();
+  assert.equal(snapshot.status, 'degraded');
+  assert.equal(snapshot.issueCount, 2);
+  assert.equal(snapshot.integrityIssues.logs[0].documentId, 'orphan-log');
+  assert.equal(
+    snapshot.integrityIssues.assessments[0].issues[0].field,
+    'studentId',
+  );
+
+  adapter.emit('students', {
+    records: [{ id: 'missing' }],
+    issues: [],
+    receivedAt: 2,
+  });
+  snapshot = store.getSnapshot();
+  assert.equal(snapshot.status, 'ready');
+  assert.equal(snapshot.issueCount, 0);
+  assert.deepEqual(snapshot.integrityIssues.logs, []);
+  assert.deepEqual(snapshot.integrityIssues.assessments, []);
   unsubscribe();
 });
 

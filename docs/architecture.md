@@ -73,6 +73,10 @@ using strict types, safe identifiers, valid dates, known score ranges, and
 known fields. Any issue moves the public state to `degraded`; stream failures
 move it to `error`. Both states pause presentation of analytics.
 
+After all three streams load, the data Module checks referential integrity.
+Every log and assessment must reference a student in the same dataset; orphan
+records degrade the complete dataset rather than disappearing inside analytics.
+
 The Firebase Adapter requests metadata events and accepts only snapshots whose
 `fromCache` and `hasPendingWrites` values are explicitly `false`. Cache-only
 snapshots and latency-compensated local-write overlays are neither decoded nor

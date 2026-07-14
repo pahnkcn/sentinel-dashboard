@@ -24,6 +24,10 @@ server confirmation within 15 seconds, and fail closed on a later unverified
 transition. Timestamp only accepted server snapshots; do not treat that
 timestamp as an independent heartbeat or as source-observation age.
 
+Once all streams are loaded, require every log and assessment `studentId` to
+resolve to a student in the same dataset. Treat any orphan as a dataset issue
+and pause analytics until a coherent reference appears.
+
 Keep Firebase behind an Adapter Seam and use an in-memory Adapter in tests.
 
 ## Consequences

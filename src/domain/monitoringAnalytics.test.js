@@ -84,10 +84,33 @@ test('calculates sample statistics and gender-filtered trends', () => {
 
   assert.equal(all.populationTrend[0].self, 2);
   assert.equal(all.populationTrend[0].self_sd, 1.41);
+  assert.equal(all.populationTrend[0].self_n, 2);
   assert.equal(all.filteredStudentCount, 2);
   assert.equal(male.filteredStudentCount, 1);
   assert.equal(male.populationTrend[0].self, 1);
-  assert.equal(male.populationTrend[0].self_sd, 0);
+  assert.equal(male.populationTrend[0].self_sd, null);
+  assert.equal(male.populationTrend[0].self_n, 1);
+});
+
+test('weights each student once per week and reports per-metric sample sizes', () => {
+  const analytics = createMonitoringAnalytics({
+    students: [student('a'), student('b')],
+    logs: [
+      log('a_first', 'a', '2026-05-12', { self: 1, buddy: 2 }),
+      log('a_second', 'a', '2026-05-13', { self: 3 }),
+      log('b_only', 'b', '2026-05-12', { self: 4 }),
+    ],
+    asOfDate: '2026-05-13',
+  });
+
+  const week = analytics.getOverview().populationTrend[0];
+  assert.equal(week.self, 3);
+  assert.equal(week.self_sd, 1.41);
+  assert.equal(week.self_n, 2);
+  assert.equal(week.buddy, 2);
+  assert.equal(week.buddy_sd, null);
+  assert.equal(week.buddy_n, 1);
+  assert.equal(week.command_n, 0);
 });
 
 test('classifies alerts from each student latest observation', () => {

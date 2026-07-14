@@ -20,6 +20,11 @@ future assessments. Select DASS and resilience results independently so a
 DASS-only week 4 record cannot mask the latest valid CD-RISC and GRIT scores;
 retain the source week in the projection.
 
+For weekly population statistics, average each student's observed daily values
+within the week before calculating the cohort mean and sample SD. Return `N`
+per metric and no SD when fewer than two students contribute. This prevents
+students with more daily records from receiving more cohort weight.
+
 Expose screen-shaped projections through a small Interface. Keep the Module
 free of React and Firebase.
 

@@ -13,15 +13,30 @@ function getLocalIsoDate() {
 
 function calculateStats(values) {
   const valid = values.filter(Number.isFinite);
-  if (valid.length === 0) return { mean: null, sd: null };
-  if (valid.length === 1) return { mean: round(valid[0]), sd: 0 };
+  if (valid.length === 0) return { mean: null, sd: null, n: 0 };
+  if (valid.length === 1) return { mean: round(valid[0]), sd: null, n: 1 };
 
   const mean = valid.reduce((sum, value) => sum + value, 0) / valid.length;
   const variance = valid.reduce(
     (sum, value) => sum + ((value - mean) ** 2),
     0,
   ) / (valid.length - 1);
-  return { mean: round(mean), sd: round(Math.sqrt(variance)) };
+  return { mean: round(mean), sd: round(Math.sqrt(variance)), n: valid.length };
+}
+
+function calculateStudentWeightedStats(logs, field) {
+  const valuesByStudent = new Map();
+  for (const log of logs) {
+    const value = log[field];
+    if (!Number.isFinite(value)) continue;
+    if (!valuesByStudent.has(log.studentId)) valuesByStudent.set(log.studentId, []);
+    valuesByStudent.get(log.studentId).push(value);
+  }
+
+  const studentMeans = [...valuesByStudent.values()].map(values => (
+    values.reduce((sum, value) => sum + value, 0) / values.length
+  ));
+  return calculateStats(studentMeans);
 }
 
 function compareByDateThenId(left, right) {
@@ -136,17 +151,20 @@ function createPopulationTrend(logs) {
   return Array.from({ length: 16 }, (_, index) => {
     const week = index + 1;
     const weekLogs = logs.filter(log => log.week === week);
-    const self = calculateStats(weekLogs.map(log => log.self));
-    const buddy = calculateStats(weekLogs.map(log => log.buddy));
-    const command = calculateStats(weekLogs.map(log => log.command));
+    const self = calculateStudentWeightedStats(weekLogs, 'self');
+    const buddy = calculateStudentWeightedStats(weekLogs, 'buddy');
+    const command = calculateStudentWeightedStats(weekLogs, 'command');
     return {
       week: `Wk ${week}`,
       self: self.mean,
       self_sd: self.sd,
+      self_n: self.n,
       buddy: buddy.mean,
       buddy_sd: buddy.sd,
+      buddy_n: buddy.n,
       command: command.mean,
       command_sd: command.sd,
+      command_n: command.n,
     };
   });
 }
@@ -161,10 +179,13 @@ function createDassTrend(assessments) {
       week: `Wk ${week}`,
       dass_d: depression.mean,
       dass_d_sd: depression.sd,
+      dass_d_n: depression.n,
       dass_a: anxiety.mean,
       dass_a_sd: anxiety.sd,
+      dass_a_n: anxiety.n,
       dass_s: stress.mean,
       dass_s_sd: stress.sd,
+      dass_s_n: stress.n,
     };
   });
 }
@@ -178,8 +199,10 @@ function createResilienceTrend(assessments) {
       week: `Wk ${week}`,
       cd_risc: cdRisc.mean,
       cd_risc_sd: cdRisc.sd,
+      cd_risc_n: cdRisc.n,
       grit: grit.mean,
       grit_sd: grit.sd,
+      grit_n: grit.n,
     };
   });
 }

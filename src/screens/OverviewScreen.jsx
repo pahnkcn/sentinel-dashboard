@@ -11,20 +11,25 @@ import {
 } from 'recharts';
 import { Activity, BookOpen, ShieldCheck } from 'lucide-react';
 import { Skeleton } from '../ui/Skeleton.jsx';
+import {
+  formatStandardDeviation,
+  hasStatisticValue,
+} from '../ui/statisticsPresentation.js';
 
 const GENDER_FILTERS = ['all', 'ชาย', 'หญิง'];
 
-function PopulationTooltip({ active, payload, label, studentCount }) {
+function PopulationTooltip({ active, payload, label }) {
   if (!active || !payload) return null;
 
   return (
     <div className="rounded-lg border bg-white p-3 text-xs shadow-xl">
-      <p className="mb-2 border-b pb-1 font-bold">{label} (N={studentCount})</p>
-      {payload.map(entry => (
+      <p className="mb-2 border-b pb-1 font-bold">{label}</p>
+      {payload.map(entry => hasStatisticValue(entry.value) ? (
         <p key={entry.dataKey} style={{ color: entry.color }}>
-          {entry.name}: {entry.value} (SD: {entry.payload[`${entry.dataKey}_sd`]})
+          {entry.name}: {entry.value} (N={entry.payload[`${entry.dataKey}_n`]}, SD:{' '}
+          {formatStandardDeviation(entry.payload[`${entry.dataKey}_sd`])})
         </p>
-      ))}
+      ) : null)}
     </div>
   );
 }
@@ -35,9 +40,10 @@ function AssessmentTooltip({ active, payload, label }) {
   return (
     <div className="rounded-lg border bg-white p-3 text-xs shadow-xl">
       <p className="mb-2 border-b pb-1 font-bold">{label}</p>
-      {payload.map(entry => entry.value ? (
+      {payload.map(entry => hasStatisticValue(entry.value) ? (
         <p key={entry.dataKey} style={{ color: entry.color }}>
-          {entry.name}: {entry.value} (SD: {entry.payload[`${entry.dataKey}_sd`]})
+          {entry.name}: {entry.value} (N={entry.payload[`${entry.dataKey}_n`]}, SD:{' '}
+          {formatStandardDeviation(entry.payload[`${entry.dataKey}_sd`])})
         </p>
       ) : null)}
     </div>
@@ -112,7 +118,7 @@ export const OverviewScreen = memo(function OverviewScreen({ analytics, loading 
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={0} />
                 <YAxis domain={[1, 4]} ticks={[1, 2, 3, 4]} />
-                <RechartsTooltip content={<PopulationTooltip studentCount={overview.filteredStudentCount} />} />
+                <RechartsTooltip content={<PopulationTooltip />} />
                 <Legend iconType="circle" />
                 <Line type="monotone" dataKey="self" name="Self" stroke="#3b82f6" strokeWidth={3} dot={{ r: 3 }} connectNulls />
                 <Line type="monotone" dataKey="buddy" name="Buddy" stroke="#10b981" strokeWidth={3} dot={{ r: 3 }} connectNulls />

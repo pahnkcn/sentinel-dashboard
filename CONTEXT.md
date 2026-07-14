@@ -27,6 +27,10 @@ data-entry or fixture-generation tool.
   week.
 - **Clinical alert** — a dashboard classification derived from the latest
   valid observations. It is decision support, not a diagnosis.
+- **Weekly population statistic** — each student's observed daily values are
+  averaged within the week first, then each student contributes one equally
+  weighted value to the cohort mean and sample SD. `N` is reported per metric;
+  sample SD is unavailable when `N` is less than `2`.
 
 ## Record invariants
 

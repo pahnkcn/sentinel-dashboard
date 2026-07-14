@@ -98,7 +98,8 @@ verified-query subscription are test Seams for lifecycle behavior.
 - per-student chronological LOCF for labeled presentation continuity only;
 - observed-value population statistics and latest-observation alerts;
 - an explicit local-date as-of cutoff that withholds future-dated logs;
-- sample mean and sample standard deviation;
+- equally weighted per-student weekly means with per-metric sample size and
+  sample standard deviation only when at least two students contribute;
 - scheduled DASS-21, CD-RISC, and GRIT projections;
 - per-instrument latest selection with the source week retained;
 - historical room views that never use a future assessment;

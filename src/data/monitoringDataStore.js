@@ -1,3 +1,5 @@
+import { isSafeDatasetVersion } from './datasetManifest.js';
+
 export const MONITORING_STREAMS = Object.freeze(['students', 'logs', 'assessments']);
 
 function perStream(factory) {
@@ -7,6 +9,7 @@ function perStream(factory) {
 function initialState(status = 'idle') {
   return {
     status,
+    datasetVersion: null,
     students: [],
     logs: [],
     assessments: [],
@@ -61,10 +64,6 @@ function deriveState(state) {
     ),
     0,
   );
-  const timestamps = MONITORING_STREAMS
-    .map(stream => state[`${stream}UpdatedAt`])
-    .filter(value => Number.isFinite(value));
-
   let status = 'connecting';
   if (hasError) status = 'error';
   else if (isLoaded && (issueCount > 0 || truncatedStreams.length > 0)) status = 'degraded';
@@ -76,8 +75,30 @@ function deriveState(state) {
     issueCount,
     integrityIssues,
     truncatedStreams,
-    lastUpdatedAt: timestamps.length > 0 ? Math.max(...timestamps) : null,
   };
+}
+
+function normalizePayload(payload) {
+  return {
+    records: Array.isArray(payload?.records) ? payload.records : [],
+    issues: Array.isArray(payload?.issues) ? payload.issues : [],
+    truncated: payload?.truncated === true,
+  };
+}
+
+function isCompleteDataset(dataset) {
+  return (
+    isSafeDatasetVersion(dataset?.version)
+    && Number.isFinite(dataset?.verifiedAt)
+    && dataset.streams !== null
+    && typeof dataset.streams === 'object'
+    && MONITORING_STREAMS.every(stream => (
+      Object.hasOwn(dataset.streams, stream)
+      && Array.isArray(dataset.streams[stream]?.records)
+      && Array.isArray(dataset.streams[stream]?.issues)
+      && typeof dataset.streams[stream]?.truncated === 'boolean'
+    ))
+  );
 }
 
 export function createMonitoringDataStore(adapter) {
@@ -115,23 +136,64 @@ export function createMonitoringDataStore(adapter) {
     emit();
 
     const observer = {
-      next(stream, payload) {
-        if (generation !== connectionGeneration || !isKnownStream(stream)) return;
+      beginDataset(version) {
+        if (generation !== connectionGeneration) return;
+        if (!isSafeDatasetVersion(version)) {
+          const versionError = publicStreamError('dataset', {
+            code: 'dataset-version-invalid',
+          });
+          setState({
+            ...initialState('error'),
+            errors: perStream(() => versionError),
+          });
+          return;
+        }
+        setState({
+          ...initialState('connecting'),
+          datasetVersion: version,
+        });
+      },
+      replaceDataset(dataset) {
+        if (
+          generation !== connectionGeneration
+          || dataset?.version !== state.datasetVersion
+        ) return;
+        if (!isCompleteDataset(dataset)) {
+          const datasetError = publicStreamError('dataset', {
+            code: 'atomic-dataset-invalid',
+          });
+          setState(deriveState({
+            ...state,
+            errors: perStream(() => datasetError),
+          }));
+          return;
+        }
 
-        const records = Array.isArray(payload?.records) ? payload.records : [];
-        const issues = Array.isArray(payload?.issues) ? payload.issues : [];
-        const receivedAt = Number.isFinite(payload?.receivedAt)
-          ? payload.receivedAt
-          : Date.now();
+        const nextState = {
+          ...initialState('connecting'),
+          datasetVersion: dataset.version,
+          lastUpdatedAt: dataset.verifiedAt,
+          loading: perStream(() => false),
+        };
+
+        for (const stream of MONITORING_STREAMS) {
+          const payload = normalizePayload(dataset.streams?.[stream]);
+          nextState[stream] = payload.records;
+          nextState.issues[stream] = payload.issues;
+          nextState.truncated[stream] = payload.truncated;
+        }
+        setState(deriveState(nextState));
+      },
+      verified(stream) {
+        if (
+          generation !== connectionGeneration
+          || !isKnownStream(stream)
+          || state.errors[stream] === null
+        ) return;
 
         setState(deriveState({
           ...state,
-          [stream]: records,
-          [`${stream}UpdatedAt`]: receivedAt,
-          issues: { ...state.issues, [stream]: issues },
           errors: { ...state.errors, [stream]: null },
-          loading: { ...state.loading, [stream]: false },
-          truncated: { ...state.truncated, [stream]: payload?.truncated === true },
         }));
       },
       error(stream, error) {
@@ -140,7 +202,6 @@ export function createMonitoringDataStore(adapter) {
         setState(deriveState({
           ...state,
           errors: { ...state.errors, [stream]: publicStreamError(stream, error) },
-          loading: { ...state.loading, [stream]: false },
         }));
       },
     };

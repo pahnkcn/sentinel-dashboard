@@ -12,28 +12,34 @@ function connectStore() {
   return { adapter, store, unsubscribe, notifications: () => notifications };
 }
 
-test('becomes ready after all streams arrive in any order', () => {
+function payload(records = [], overrides = {}) {
+  return { records, issues: [], truncated: false, ...overrides };
+}
+
+function dataset(overrides = {}) {
+  return {
+    students: payload(),
+    logs: payload(),
+    assessments: payload(),
+    ...overrides,
+  };
+}
+
+test('publishes all streams as one verified dataset', () => {
   const { adapter, store, unsubscribe } = connectStore();
 
   assert.equal(adapter.connectionCount, 1);
   assert.equal(store.getSnapshot().status, 'connecting');
 
-  adapter.emit('logs', {
-    records: [{ id: 'log', studentId: 'student' }],
-    issues: [],
-    receivedAt: 20,
-  });
-  adapter.emit('assessments', {
-    records: [{ id: 'assessment', studentId: 'student' }],
-    issues: [],
-    receivedAt: 10,
-  });
-  assert.equal(store.getSnapshot().status, 'connecting');
-
-  adapter.emit('students', { records: [{ id: 'student' }], issues: [], receivedAt: 30 });
+  adapter.publishDataset(dataset({
+    students: payload([{ id: 'student' }]),
+    logs: payload([{ id: 'log', studentId: 'student' }]),
+    assessments: payload([{ id: 'assessment', studentId: 'student' }]),
+  }), { version: 'release-1', verifiedAt: 30 });
 
   const snapshot = store.getSnapshot();
   assert.equal(snapshot.status, 'ready');
+  assert.equal(snapshot.datasetVersion, 'release-1');
   assert.deepEqual(snapshot.students, [{ id: 'student' }]);
   assert.equal(snapshot.lastUpdatedAt, 30);
   unsubscribe();
@@ -42,13 +48,10 @@ test('becomes ready after all streams arrive in any order', () => {
 test('marks invalid or truncated data as degraded', () => {
   const { adapter, store, unsubscribe } = connectStore();
 
-  adapter.emit('students', {
-    records: [],
-    issues: [{ documentId: 'bad', issues: [] }],
-    receivedAt: 1,
-  });
-  adapter.emit('logs', { records: [], issues: [], truncated: true, receivedAt: 1 });
-  adapter.emit('assessments', { records: [], issues: [], receivedAt: 1 });
+  adapter.publishDataset(dataset({
+    students: payload([], { issues: [{ documentId: 'bad', issues: [] }] }),
+    logs: payload([], { truncated: true }),
+  }), { verifiedAt: 1 });
 
   const snapshot = store.getSnapshot();
   assert.equal(snapshot.status, 'degraded');
@@ -60,17 +63,10 @@ test('marks invalid or truncated data as degraded', () => {
 test('degrades orphan records and recovers when their student arrives', () => {
   const { adapter, store, unsubscribe } = connectStore();
 
-  adapter.emit('students', { records: [], issues: [], receivedAt: 1 });
-  adapter.emit('logs', {
-    records: [{ id: 'orphan-log', studentId: 'missing' }],
-    issues: [],
-    receivedAt: 1,
-  });
-  adapter.emit('assessments', {
-    records: [{ id: 'orphan-assessment', studentId: 'missing' }],
-    issues: [],
-    receivedAt: 1,
-  });
+  adapter.publishDataset(dataset({
+    logs: payload([{ id: 'orphan-log', studentId: 'missing' }]),
+    assessments: payload([{ id: 'orphan-assessment', studentId: 'missing' }]),
+  }), { version: 'release-1', verifiedAt: 1 });
 
   let snapshot = store.getSnapshot();
   assert.equal(snapshot.status, 'degraded');
@@ -81,13 +77,14 @@ test('degrades orphan records and recovers when their student arrives', () => {
     'studentId',
   );
 
-  adapter.emit('students', {
-    records: [{ id: 'missing' }],
-    issues: [],
-    receivedAt: 2,
-  });
+  adapter.publishDataset(dataset({
+    students: payload([{ id: 'missing' }]),
+    logs: payload([{ id: 'orphan-log', studentId: 'missing' }]),
+    assessments: payload([{ id: 'orphan-assessment', studentId: 'missing' }]),
+  }), { version: 'release-2', verifiedAt: 2 });
   snapshot = store.getSnapshot();
   assert.equal(snapshot.status, 'ready');
+  assert.equal(snapshot.datasetVersion, 'release-2');
   assert.equal(snapshot.issueCount, 0);
   assert.deepEqual(snapshot.integrityIssues.logs, []);
   assert.deepEqual(snapshot.integrityIssues.assessments, []);
@@ -96,9 +93,7 @@ test('degrades orphan records and recovers when their student arrives', () => {
 
 test('fails closed on a stream error and recovers on the next snapshot', () => {
   const { adapter, store, unsubscribe } = connectStore();
-  for (const stream of ['students', 'logs', 'assessments']) {
-    adapter.emit(stream, { records: [], issues: [], receivedAt: 1 });
-  }
+  adapter.publishDataset(dataset(), { verifiedAt: 1 });
 
   adapter.fail('logs', { code: 'permission-denied', message: 'sensitive detail' });
 
@@ -107,7 +102,7 @@ test('fails closed on a stream error and recovers on the next snapshot', () => {
   assert.equal(snapshot.errors.logs.code, 'permission-denied');
   assert.doesNotMatch(JSON.stringify(snapshot.errors), /sensitive detail/);
 
-  adapter.emit('logs', { records: [], issues: [], receivedAt: 2 });
+  adapter.verify('logs');
   snapshot = store.getSnapshot();
   assert.equal(snapshot.status, 'ready');
   assert.equal(snapshot.errors.logs, null);
@@ -116,7 +111,9 @@ test('fails closed on a stream error and recovers on the next snapshot', () => {
 
 test('disconnects once and clears sensitive records after the last subscriber leaves', () => {
   const { adapter, store, unsubscribe } = connectStore();
-  adapter.emit('students', { records: [{ id: 'sensitive' }], issues: [], receivedAt: 1 });
+  adapter.publishDataset(dataset({
+    students: payload([{ id: 'sensitive' }]),
+  }), { verifiedAt: 1 });
 
   unsubscribe();
   unsubscribe();
@@ -145,7 +142,9 @@ test('reconnects without leaking records after a StrictMode-style remount', () =
   const adapter = createInMemoryMonitoringAdapter();
   const store = createMonitoringDataStore(adapter);
   const firstUnmount = store.subscribe(() => {});
-  adapter.emit('students', { records: [{ id: 'sensitive' }], issues: [], receivedAt: 1 });
+  adapter.publishDataset(dataset({
+    students: payload([{ id: 'sensitive' }]),
+  }), { verifiedAt: 1 });
 
   firstUnmount();
   const secondUnmount = store.subscribe(() => {});
@@ -157,6 +156,62 @@ test('reconnects without leaking records after a StrictMode-style remount', () =
 
   secondUnmount();
   assert.equal(adapter.disconnectCount, 2);
+});
+
+test('clears the old version while the next complete dataset is pending', () => {
+  const { adapter, store, unsubscribe, notifications } = connectStore();
+  adapter.publishDataset(dataset({
+    students: payload([{ id: 'old-sensitive' }]),
+  }), { version: 'release-1', verifiedAt: 1 });
+
+  const beforeTransition = notifications();
+  adapter.beginDataset('release-2');
+
+  let snapshot = store.getSnapshot();
+  assert.equal(snapshot.status, 'connecting');
+  assert.equal(snapshot.datasetVersion, 'release-2');
+  assert.deepEqual(snapshot.students, []);
+  assert.equal(snapshot.lastUpdatedAt, null);
+  assert.equal(notifications(), beforeTransition + 1);
+
+  adapter.replaceDataset(dataset({
+    students: payload([{ id: 'new-sensitive' }]),
+  }), { version: 'release-2', verifiedAt: 2 });
+  snapshot = store.getSnapshot();
+  assert.equal(snapshot.status, 'ready');
+  assert.deepEqual(snapshot.students, [{ id: 'new-sensitive' }]);
+  assert.equal(snapshot.lastUpdatedAt, 2);
+  unsubscribe();
+});
+
+test('ignores an atomic replacement from a stale dataset version', () => {
+  const { adapter, store, unsubscribe } = connectStore();
+  adapter.beginDataset('release-2');
+  adapter.replaceDataset(dataset({
+    students: payload([{ id: 'stale-sensitive' }]),
+  }), { version: 'release-1', verifiedAt: 1 });
+
+  const snapshot = store.getSnapshot();
+  assert.equal(snapshot.status, 'connecting');
+  assert.equal(snapshot.datasetVersion, 'release-2');
+  assert.deepEqual(snapshot.students, []);
+  unsubscribe();
+});
+
+test('fails closed when an atomic replacement omits a stream', () => {
+  const { adapter, store, unsubscribe } = connectStore();
+  adapter.beginDataset('release-1');
+  adapter.replaceDataset({
+    students: payload([{ id: 'must-not-publish' }]),
+    logs: payload(),
+  }, { version: 'release-1', verifiedAt: 1 });
+
+  const snapshot = store.getSnapshot();
+  assert.equal(snapshot.status, 'error');
+  assert.equal(snapshot.errors.students.code, 'atomic-dataset-invalid');
+  assert.deepEqual(snapshot.students, []);
+  assert.equal(snapshot.lastUpdatedAt, null);
+  unsubscribe();
 });
 
 test('turns adapter startup failures into a public error state', () => {

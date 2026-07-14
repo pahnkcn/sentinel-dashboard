@@ -10,10 +10,12 @@ flowchart LR
   Shell --> Data["Monitoring Data Module"]
   Data --> Adapter["Firebase Adapter"]
   Adapter --> Rules["Firestore Security Rules"]
-  Rules --> Store[("students / logs / assessments")]
+  Rules --> Manifest[("current dataset manifest")]
+  Manifest --> Store[("versioned students / logs / assessments")]
   Adapter --> Verify["Server snapshot gate"]
-  Verify --> Decode["Record decoders"]
-  Decode --> Lifecycle["Shared bounded lifecycle store"]
+  Verify --> Decode["Manifest and record decoders"]
+  Decode --> Coordinate["Versioned dataset coordinator"]
+  Coordinate --> Lifecycle["Atomic shared lifecycle store"]
   Lifecycle --> Analytics["Monitoring Analytics Module"]
   Analytics --> Overview["Overview screen"]
   Analytics --> Room["Room Status screen"]
@@ -34,7 +36,8 @@ state before they reach analytics.
 - **Seam** — a deliberate substitution point. The monitoring store accepts an
   Adapter, so tests can use the in-memory implementation without Firebase.
 - **Adapter** — infrastructure translation at a boundary. The Firebase Adapter
-  turns bounded Firestore snapshots into decoded stream events.
+  turns a verified manifest and bounded Firestore snapshots into one versioned
+  dataset event.
 - **Depth** — substantial behavior behind a small Interface. Validation,
   lifecycle, truncation, freshness, error handling, and cleanup stay behind the
   data Module rather than leaking into React.
@@ -67,28 +70,42 @@ repeats the role and verified-email check and denies all client writes.
 subscriber the store connects the Firebase Adapter; on the last unsubscribe it
 disconnects every listener and clears sensitive records from its snapshot.
 
-Each collection has a hard query limit plus one sentinel record. If the
-sentinel appears, the stream is marked truncated. Snapshot records are decoded
-using strict types, safe identifiers, valid dates, known score ranges, and
-known fields. Any issue moves the public state to `degraded`; stream failures
-move it to `error`. Both states pause presentation of analytics.
+The Adapter first reads the exact `monitoringManifests/current` document. Its
+safe version selects `students`, `logs`, and `assessments` collections below
+`monitoringDatasets/{version}`. Security Rules allow only that current version,
+so staged, retired, top-level legacy, and undeclared paths fail closed.
+
+Each selected collection has a hard query limit plus one sentinel record. If
+the sentinel appears, the stream is marked truncated. Snapshot records are
+decoded using strict types, safe identifiers, valid dates, known score ranges,
+and known fields. Any issue moves the public state to `degraded`; stream
+failures move it to `error`. Both states pause presentation of analytics.
 
 After all three streams load, the data Module checks referential integrity.
 Every log and assessment must reference a student in the same dataset; orphan
 records degrade the complete dataset rather than disappearing inside analytics.
 
-The Firebase Adapter requests metadata events and accepts only snapshots whose
-`fromCache` and `hasPendingWrites` values are explicitly `false`. Cache-only
-snapshots and latency-compensated local-write overlays are neither decoded nor
-timestamped. Every stream must receive its first committed server-confirmed
-snapshot within 15 seconds; otherwise the state fails closed. A later
-unverified transition immediately moves the state to `error`, and a subsequent
-committed server snapshot can recover it.
+The Firebase Adapter requests metadata events and accepts only manifest and
+record snapshots whose `fromCache` and `hasPendingWrites` values are explicitly
+`false`. Cache-only snapshots and latency-compensated local-write overlays are
+neither decoded nor timestamped. Every listener must receive its first
+committed server-confirmed snapshot within 15 seconds; otherwise the state
+fails closed. A later unverified transition immediately moves the state to
+`error`, and a subsequent identical committed snapshot can recover it.
 
-`lastUpdatedAt` is the time the accepted snapshot was confirmed by the server.
-It is point-in-time evidence, not an independent connection heartbeat and not
-the age of the underlying clinical observations. The in-memory Adapter and the
-verified-query subscription are test Seams for lifecycle behavior.
+The versioned dataset coordinator buffers all three streams behind a narrow
+Interface. It publishes one atomic replacement only after the complete version
+is verified. A manifest transition clears the previous sensitive version while
+the next one connects. A changed snapshot under an already-published version
+violates the immutable-version contract and fails closed until a manifest
+transition. This Module has high Depth: independent listeners, generation
+tokens, mutation detection, and recovery remain behind one dataset event.
+
+`lastUpdatedAt` is the time the complete dataset was published after all three
+streams were server-confirmed. It is point-in-time evidence, not an independent
+connection heartbeat and not the age of the underlying clinical observations.
+The in-memory Adapter, coordinator, and verified subscriptions are test Seams
+for lifecycle behavior with strong Locality and reusable Leverage.
 
 ### Monitoring Analytics Module
 
@@ -144,3 +161,4 @@ projections or extend that Module with a tested domain operation.
 - [ADR 0004: central monitoring analytics](adr/0004-central-monitoring-analytics.md)
 - [ADR 0005: clinical browser data scope](adr/0005-clinical-browser-data-scope.md)
 - [ADR 0006: explicit Firebase environments](adr/0006-explicit-firebase-environments.md)
+- [ADR 0007: manifest-pinned atomic datasets](adr/0007-manifest-pinned-atomic-datasets.md)

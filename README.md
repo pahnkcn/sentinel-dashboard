@@ -68,23 +68,28 @@ administrator provisions the required custom claim. See
 The emulator commands use a pinned Firebase CLI and may download it on the
 first run.
 
-## Data collections
+## Versioned datasets
 
-The browser reads exactly three top-level Firestore collections:
+The browser first reads the exact `monitoringManifests/current` document. Its
+safe `version` selects three bounded collections under one immutable scope:
 
-- `students`
-- `logs`
-- `assessments`
+- `monitoringDatasets/{version}/students`
+- `monitoringDatasets/{version}/logs`
+- `monitoringDatasets/{version}/assessments`
 
 Records are decoded into strict known-field shapes before analytics can see
-them. Invalid or truncated streams pause all analytics rather than presenting
-partial results. Cache-only snapshots and snapshots with pending local writes
-never enter application state: each stream must first be confirmed by the
+them. The data Module buffers all three server-confirmed streams and replaces
+application state only after the complete version is available. Invalid,
+truncated, mixed, or same-version-mutated datasets pause all analytics rather
+than presenting partial results.
+
+Cache-only snapshots and snapshots with pending local writes never enter
+application state: the manifest and every stream must be confirmed by the
 Firestore server with no uncommitted overlay. A later unverified transition
-pauses analytics. The displayed last-verified time is the point-in-time server
-confirmation, not an independent heartbeat or the age of the source
-observations. Domain terms, ranges, scheduled weeks, and LOCF rules are in
-[CONTEXT.md](CONTEXT.md).
+pauses analytics. The displayed last-verified time is when the complete
+dataset became verified, not an independent heartbeat or the age of the
+source observations. Domain terms, ranges, scheduled weeks, and LOCF rules are
+in [CONTEXT.md](CONTEXT.md).
 
 ## Architecture and operations
 
@@ -95,4 +100,6 @@ observations. Domain terms, ranges, scheduled weeks, and LOCF rules are in
 
 Administrative imports and fixture generation deliberately do not exist in
 this client. Put those operations in separately authorized server-side tooling
-with audit logs and backups.
+with audit logs and backups. Stage a new immutable version, validate all three
+collections, and change `monitoringManifests/current` only as the final publish
+operation; see the [deployment runbook](docs/deployment.md).

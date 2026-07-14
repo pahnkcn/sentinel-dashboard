@@ -19,8 +19,21 @@ import {
 const PROJECT_ID = 'demo-sentinel-dashboard-rules';
 const RULES_URL = new URL('../firestore.rules', import.meta.url);
 const PROTECTED_COLLECTIONS = ['students', 'logs', 'assessments'];
+const CURRENT_VERSION = 'release-1';
 
 let testEnvironment;
+
+function manifestReference(db, documentId = 'current') {
+  return doc(db, 'monitoringManifests', documentId);
+}
+
+function recordCollection(db, collectionName, version = CURRENT_VERSION) {
+  return collection(db, 'monitoringDatasets', version, collectionName);
+}
+
+function recordReference(db, collectionName, version = CURRENT_VERSION) {
+  return doc(recordCollection(db, collectionName, version), 'seed');
+}
 
 before(async () => {
   const rules = await readFile(RULES_URL, 'utf8');
@@ -38,11 +51,23 @@ before(async () => {
   await testEnvironment.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
 
+    await setDoc(manifestReference(db), { version: CURRENT_VERSION });
+
     for (const collectionName of PROTECTED_COLLECTIONS) {
-      await setDoc(doc(db, collectionName, 'seed'), { seeded: true });
-      await setDoc(doc(db, collectionName, 'seed', 'nested', 'secret'), { seeded: true });
+      await setDoc(recordReference(db, collectionName), { seeded: true });
+      await setDoc(
+        doc(recordReference(db, collectionName), 'nested', 'secret'),
+        { seeded: true },
+      );
+      await setDoc(recordReference(db, collectionName, 'release-0'), { seeded: true });
+      await setDoc(recordReference(db, collectionName, 'release-2'), { seeded: true });
+      await setDoc(doc(db, collectionName, 'legacy'), { seeded: true });
     }
 
+    await setDoc(manifestReference(db, 'candidate'), { version: 'release-2' });
+    await setDoc(doc(db, 'monitoringDatasets', CURRENT_VERSION, 'private', 'seed'), {
+      seeded: true,
+    });
     await setDoc(doc(db, 'private', 'seed'), { seeded: true });
   });
 });
@@ -54,8 +79,9 @@ after(async () => {
 test('unauthenticated users cannot read protected data', async () => {
   const db = testEnvironment.unauthenticatedContext().firestore();
 
+  await assertFails(getDoc(manifestReference(db)));
   for (const collectionName of PROTECTED_COLLECTIONS) {
-    await assertFails(getDoc(doc(db, collectionName, 'seed')));
+    await assertFails(getDoc(recordReference(db, collectionName)));
   }
 });
 
@@ -64,9 +90,8 @@ test('anonymous users without claims cannot read protected data', async () => {
     firebase: { sign_in_provider: 'anonymous' },
   }).firestore();
 
-  for (const collectionName of PROTECTED_COLLECTIONS) {
-    await assertFails(getDoc(doc(db, collectionName, 'seed')));
-  }
+  await assertFails(getDoc(manifestReference(db)));
+  await assertFails(getDoc(recordReference(db, 'students')));
 });
 
 test('ordinary verified users cannot read protected data', async () => {
@@ -74,9 +99,8 @@ test('ordinary verified users cannot read protected data', async () => {
     email_verified: true,
   }).firestore();
 
-  for (const collectionName of PROTECTED_COLLECTIONS) {
-    await assertFails(getDoc(doc(db, collectionName, 'seed')));
-  }
+  await assertFails(getDoc(manifestReference(db)));
+  await assertFails(getDoc(recordReference(db, 'students')));
 });
 
 test('unverified clinicians cannot read protected data', async () => {
@@ -85,24 +109,39 @@ test('unverified clinicians cannot read protected data', async () => {
     sentinelRole: 'clinician',
   }).firestore();
 
-  for (const collectionName of PROTECTED_COLLECTIONS) {
-    await assertFails(getDoc(doc(db, collectionName, 'seed')));
-  }
+  await assertFails(getDoc(manifestReference(db)));
+  await assertFails(getDoc(recordReference(db, 'students')));
 });
 
 for (const role of ['clinician', 'admin']) {
-  test(`${role} users can read and list protected data`, async () => {
+  test(`${role} users can read the exact manifest and current dataset`, async () => {
     const db = testEnvironment.authenticatedContext(`${role}-user`, {
       email_verified: true,
       sentinelRole: role,
     }).firestore();
 
+    await assertSucceeds(getDoc(manifestReference(db)));
     for (const collectionName of PROTECTED_COLLECTIONS) {
-      await assertSucceeds(getDoc(doc(db, collectionName, 'seed')));
-      await assertSucceeds(getDocs(collection(db, collectionName)));
+      await assertSucceeds(getDoc(recordReference(db, collectionName)));
+      await assertSucceeds(getDocs(recordCollection(db, collectionName)));
     }
   });
 }
+
+test('privileged users cannot list manifests or read inactive datasets', async () => {
+  const db = testEnvironment.authenticatedContext('current-only-admin', {
+    email_verified: true,
+    sentinelRole: 'admin',
+  }).firestore();
+
+  await assertFails(getDocs(collection(db, 'monitoringManifests')));
+  await assertFails(getDoc(manifestReference(db, 'candidate')));
+  for (const collectionName of PROTECTED_COLLECTIONS) {
+    await assertFails(getDoc(recordReference(db, collectionName, 'release-0')));
+    await assertFails(getDoc(recordReference(db, collectionName, 'release-2')));
+    await assertFails(getDoc(doc(db, collectionName, 'legacy')));
+  }
+});
 
 test('all client create, update, and delete operations are denied', async () => {
   const clinicianDb = testEnvironment.authenticatedContext('clinician-writer', {
@@ -114,9 +153,13 @@ test('all client create, update, and delete operations are denied', async () => 
     sentinelRole: 'admin',
   }).firestore();
 
-  await assertFails(setDoc(doc(clinicianDb, 'students', 'new'), { name: 'New' }));
-  await assertFails(updateDoc(doc(adminDb, 'logs', 'seed'), { changed: true }));
-  await assertFails(deleteDoc(doc(adminDb, 'assessments', 'seed')));
+  await assertFails(setDoc(
+    doc(recordCollection(clinicianDb, 'students'), 'new'),
+    { name: 'New' },
+  ));
+  await assertFails(updateDoc(recordReference(adminDb, 'logs'), { changed: true }));
+  await assertFails(deleteDoc(recordReference(adminDb, 'assessments')));
+  await assertFails(updateDoc(manifestReference(adminDb), { version: 'release-2' }));
 });
 
 test('unknown collections remain denied for privileged users', async () => {
@@ -126,6 +169,7 @@ test('unknown collections remain denied for privileged users', async () => {
   }).firestore();
 
   await assertFails(getDoc(doc(db, 'private', 'seed')));
+  await assertFails(getDoc(doc(db, 'monitoringDatasets', CURRENT_VERSION, 'private', 'seed')));
   await assertFails(setDoc(doc(db, 'private', 'new'), { secret: true }));
 });
 
@@ -136,6 +180,8 @@ test('privileged users cannot read undeclared nested subcollections', async () =
   }).firestore();
 
   for (const collectionName of PROTECTED_COLLECTIONS) {
-    await assertFails(getDoc(doc(db, collectionName, 'seed', 'nested', 'secret')));
+    await assertFails(getDoc(
+      doc(recordReference(db, collectionName), 'nested', 'secret'),
+    ));
   }
 });

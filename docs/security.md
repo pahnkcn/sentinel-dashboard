@@ -23,10 +23,11 @@ monitoring decisions.
 | --- | --- |
 | Public or ordinary-user access | Verified email plus exact `clinician`/`admin` custom claim in client and rules |
 | Client mutation or fixture injection | All Firestore client writes denied; no runtime seeder |
-| Future nested collections inheriting access | Rules authorize only one top-level document segment |
+| Future collections inheriting access | Rules authorize only the exact current manifest and three declared collections under its selected version |
 | Malformed or prototype-sensitive records | Strict decoders, safe IDs, known fields, quarantine |
 | Orphan logs or assessments | Post-load referential-integrity checks degrade the whole dataset until every `studentId` resolves |
 | Partial or unbounded data | Bounded listeners; truncation and invalid records pause analytics |
+| Mixed collection generations | Manifest-pinned immutable versions; three streams buffer behind one atomic replacement Interface; same-version mutation fails closed |
 | Derived or future observations changing current decisions | Population statistics and alerts use observed values only; LOCF stays presentation-only; logs after the local as-of date are withheld |
 | Cached or stale data after connection loss | Cache-only snapshots are rejected; initial server verification times out after 15 seconds; later cache transitions and stream errors pause analytics; the exact last server-confirmed time remains visible |
 | Latency-compensated local writes | Snapshots with `hasPendingWrites` are rejected and pause analytics until Firestore emits a committed server snapshot |
@@ -48,7 +49,7 @@ collections, and nested subcollections.
 An authorized clinician or administrator can inspect data already delivered to
 their browser using developer tools. Code obfuscation cannot prevent this.
 Therefore the application grants no broad `viewer` role: only roles whose job
-requires individual clinical detail may read the three collections.
+requires individual clinical detail may read the current versioned collections.
 
 If a population-only role is introduced, do not grant it these reads. Produce
 server-side aggregate documents with a separate collection, claim, and ruleset
@@ -62,7 +63,8 @@ that cannot reconstruct individuals. See ADR 0005.
 - Register allowed Auth and reCAPTCHA Enterprise domains.
 - Set `VITE_FIREBASE_APPCHECK_SITE_KEY` for every remote build, validate App
   Check metrics, then enable Cloud Firestore enforcement in Firebase Console.
-- Deploy `firestore.rules`; a hosting-only deploy is not sufficient.
+- Deploy and verify restrictive Firestore Rules before any sensitive Admin SDK
+  import, publish the current manifest last, and deploy Hosting separately.
 - Configure backups, retention, audit logging, and incident procedures for the
   source data outside this read-only client.
 - Define and monitor a business freshness SLA using source observation times;
@@ -85,9 +87,13 @@ that cannot reconstruct individuals. See ADR 0005.
   `unsafe-eval`.
 - App Check reduces abuse from unregistered clients but does not replace Auth,
   Security Rules, or role review.
-- A server-confirmed snapshot proves that the query was current at the shown
-  verification time. The client has no independent application heartbeat;
-  Firestore metadata detects cache-delivered snapshots, while source-record
-  age must be governed by the operational freshness SLA.
+- Admin SDK tooling bypasses Security Rules. Dataset publication therefore
+  requires an audited least-privilege importer, immutable versions, backups,
+  and a single-publisher transaction or precondition on the manifest.
+- A complete set of server-confirmed snapshots proves that the manifest-pinned
+  dataset was current at the shown verification time. The client has no
+  independent application heartbeat; Firestore metadata detects
+  cache-delivered snapshots, while source-record age must be governed by the
+  operational freshness SLA.
 - This repository does not claim compliance with a specific regulatory regime;
   deployment owners must complete the required legal and organizational review.

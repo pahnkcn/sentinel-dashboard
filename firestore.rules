@@ -8,18 +8,21 @@ service cloud.firestore {
         && request.auth.token.sentinelRole in ['clinician', 'admin'];
     }
 
-    match /students/{studentId} {
-      allow read: if hasVerifiedClinicalRole();
+    function isCurrentDataset(datasetVersion) {
+      return datasetVersion
+        == get(/databases/$(database)/documents/monitoringManifests/current).data.version;
+    }
+
+    match /monitoringManifests/{manifestId} {
+      allow get: if manifestId == 'current' && hasVerifiedClinicalRole();
+      allow list: if false;
       allow write: if false;
     }
 
-    match /logs/{logId} {
-      allow read: if hasVerifiedClinicalRole();
-      allow write: if false;
-    }
-
-    match /assessments/{assessmentId} {
-      allow read: if hasVerifiedClinicalRole();
+    match /monitoringDatasets/{datasetVersion}/{streamName}/{recordId} {
+      allow read: if hasVerifiedClinicalRole()
+        && streamName in ['students', 'logs', 'assessments']
+        && isCurrentDataset(datasetVersion);
       allow write: if false;
     }
 

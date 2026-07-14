@@ -13,8 +13,10 @@ allow evidence or fixtures to alter production records.
 
 Require Firebase Authentication, a verified email, and an exact custom claim
 `sentinelRole` equal to `clinician` or `admin`. Repeat this decision in
-Firestore Security Rules. Permit reads only for the three declared top-level
-collections and deny every client write and unknown path.
+Firestore Security Rules. Permit reads only for the exact current manifest and
+the three declared collections under its selected immutable dataset version.
+Deny every client write and every other path, including inactive versions,
+legacy top-level collections, and nested subcollections.
 
 The client access gate is UX. Rules are the authorization source of truth.
 

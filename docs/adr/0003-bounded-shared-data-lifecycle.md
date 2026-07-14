@@ -17,12 +17,18 @@ unsubscribe closes every listener and clears state. Query each stream with a
 hard limit plus one sentinel record. Surface connecting, ready, degraded, and
 error states with point-in-time verification metadata.
 
-Subscribe to Firestore metadata changes and allow only snapshots explicitly
-confirmed by the server with no pending local writes. Reject cache-only and
-latency-compensated snapshots before decoding, require initial committed
-server confirmation within 15 seconds, and fail closed on a later unverified
-transition. Timestamp only accepted server snapshots; do not treat that
-timestamp as an independent heartbeat or as source-observation age.
+Subscribe first to a verified current-dataset manifest, then to Firestore
+metadata changes for the three bounded collections under that immutable
+version. Allow only snapshots explicitly confirmed by the server with no
+pending local writes. Reject cache-only and latency-compensated snapshots
+before decoding, require initial committed server confirmation within 15
+seconds, and fail closed on a later unverified transition.
+
+Buffer all streams in a versioned coordinator and expose only one atomic
+replacement through the store Interface. Reject any changed snapshot under an
+already-published version. Timestamp the complete verified dataset rather than
+an individual stream; do not treat that timestamp as an independent heartbeat
+or as source-observation age.
 
 Once all streams are loaded, require every log and assessment `studentId` to
 resolve to a student in the same dataset. Treat any orphan as a dataset issue
@@ -36,5 +42,7 @@ Keep Firebase behind an Adapter Seam and use an in-memory Adapter in tests.
 - Truncation pauses analytics instead of silently dropping data.
 - Cached snapshots cannot be presented as newly server-verified data.
 - Recovery requires another server-confirmed snapshot.
+- Consumers cannot observe mixed collection generations.
+- Dataset changes require a new version and a final manifest transition.
 - The data Module has greater Depth while screens remain shallow consumers.
 - Limits must be reviewed as operational capacity changes.

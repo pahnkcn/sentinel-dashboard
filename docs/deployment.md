@@ -8,8 +8,9 @@
    changing them later requires a controlled migration.
 3. Enable Google sign-in in Firebase Authentication.
 4. Add the production and approved test hosts to Authorized domains.
-5. Create the top-level `students`, `logs`, and `assessments` collections using
-   separately authorized administrative tooling.
+5. Do not create or import sensitive documents yet. Keep Firestore empty, or
+   behind a reviewed deny-all maintenance rule, until the target Security
+   Rules deployment has succeeded and its access probes pass.
 6. Use `.env.example` as the remote build template and replace every
    placeholder for that project. Never reuse the development emulator file.
 
@@ -83,11 +84,11 @@ not submit the domain to the browser preload list without organizational
 approval. If that guarantee cannot be made, reduce the HSTS policy and update
 its regression test before deployment.
 
-## 5. Deploy rules and hosting together
+## 5. Deploy and verify Firestore rules
 
 ```sh
 npx --yes firebase-tools@14.23.0 deploy \
-  --only firestore:rules,hosting \
+  --only firestore:rules \
   --project YOUR_PROJECT_ID
 ```
 
@@ -96,13 +97,80 @@ for this deployment. Keep `--project` explicit; the tracked default is a demo
 project so an accidental unqualified production deploy fails. Do not deploy
 from an unreviewed working tree.
 
-## 6. Post-deployment verification
+Deploy and verify the restrictive rules before every sensitive administrative
+import. Do not combine this command with Hosting: a multi-service Firebase
+deployment is not an atomic transaction, and its internal service order cannot
+serve as a security prerequisite.
+
+Confirm the deployed release matches the reviewed `firestore.rules` and run
+access probes against the target project. Before publication, signed-out,
+ordinary verified, and unverified clinician accounts must be unable to read the
+manifest or records; every browser role must be unable to create, update, or
+delete. The emulator suite is the release gate for exact-current-manifest,
+current-version, manifest-list, inactive-version, unknown-path, and nested-path
+behavior. Record the project, rules release, operator, and timestamp before
+continuing.
+
+## 6. Publish one immutable dataset
+
+Use separately deployed, audited Admin SDK tooling with a least-privilege
+credential. Admin SDK access bypasses Firestore Security Rules, so the importer
+is a privileged production system and must have its own review, logs, backups,
+and incident controls.
+
+1. Generate a unique safe version matching
+   `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`.
+2. Write the complete candidate to these new paths, preserving stable logical
+   document IDs within the isolated version:
+   - `monitoringDatasets/{version}/students/{studentId}`
+   - `monitoringDatasets/{version}/logs/{logId}`
+   - `monitoringDatasets/{version}/assessments/{assessmentId}`
+3. Wait for every write to commit, then re-read the candidate. Validate strict
+   schemas, score ranges, assessment schedules, deterministic duplicate keys,
+   collection limits, and that every log and assessment references a student
+   in the same version.
+4. Reconcile counts and checksums with the approved source. Stop and quarantine
+   or delete the unpublished candidate if any check fails.
+5. In a transaction or with an equivalent last-update precondition, write
+   `monitoringManifests/current` as `{ version: "THE_VERSION" }`. This must be
+   the final publish operation, with one active publisher.
+6. Never mutate a published version. Retain the previous immutable version
+   according to policy until production verification succeeds; rollback is a
+   preconditioned manifest change to a previously validated version.
+
+Creating a candidate without changing the manifest must not affect the live
+dashboard. The final manifest change makes only the selected version readable
+through Security Rules, and the client still waits for all three verified
+streams before replacing state.
+
+For an existing pre-manifest deployment, schedule a maintenance window. Deploy
+and verify a temporary deny-all rule first, deploy the version-aware Hosting
+release separately, import and validate the candidate, publish its manifest,
+then deploy and verify the final role rules before reopening access. This
+sequence deliberately makes legacy top-level clients fail closed and prevents
+old tabs from observing a mixed migration.
+
+## 7. Deploy Hosting separately
+
+```sh
+npx --yes firebase-tools@14.23.0 deploy \
+  --only hosting \
+  --project YOUR_PROJECT_ID
+```
+
+Deploy Hosting only after the rules release is verified and the manifest
+selects a fully validated dataset. Record the Hosting release separately from
+the rules release.
+
+## 8. Post-deployment verification
 
 Verify all of the following:
 
 - signed-out users see only the access gate;
 - an ordinary verified user and an unverified claimed user are denied;
 - clinician and admin users can read all three workflows;
+- clinician and admin users can get only `monitoringManifests/current`; listing
+  manifests and reading candidate or retired versions remains denied;
 - closing the signed-in tab or browser requires authentication in a new
   session;
 - create, update, and delete attempts remain denied;
@@ -113,9 +181,13 @@ Verify all of the following:
   only after another server-confirmed snapshot;
 - a snapshot with pending local writes pauses analytics and cannot update the
   last-verified time;
-- the displayed last-verified time is treated as point-in-time transport
-  evidence, while source observation age is checked against the operational
-  freshness SLA;
+- staging a candidate without changing the manifest leaves the current UI
+  unchanged, while a manifest transition clears the old version and publishes
+  all three new streams together only after full verification;
+- mutating any stream under the published version fails closed;
+- the displayed last-verified time represents full-dataset transport
+  verification, while source observation age is checked against the
+  operational freshness SLA;
 - App Check requests are valid before enforcement;
 - sign-out returns to the access gate and disconnects listeners;
 - response headers include CSP, HSTS, `nosniff`, frame denial, referrer policy,
@@ -127,5 +199,6 @@ Example header check:
 curl -sSI https://YOUR_HOST/ | sed -n '1,40p'
 ```
 
-Record the deployed commit, Firebase project, operator, rules version, and
-verification result in the deployment audit trail.
+Record the deployed commit, Firebase project, operator, dataset version, rules
+release, Hosting release, and verification result in the deployment audit
+trail.

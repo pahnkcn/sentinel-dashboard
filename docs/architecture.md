@@ -91,8 +91,9 @@ verified-query subscription are test Seams for lifecycle behavior.
 `createMonitoringAnalytics()` owns all domain transformations:
 
 - deterministic duplicate resolution;
-- per-student chronological LOCF for Buddy and Command;
-- latest-observation alert classification;
+- per-student chronological LOCF for labeled presentation continuity only;
+- observed-value population statistics and latest-observation alerts;
+- an explicit local-date as-of cutoff that withholds future-dated logs;
 - sample mean and sample standard deviation;
 - scheduled DASS-21, CD-RISC, and GRIT projections;
 - historical room views that never use a future assessment;

@@ -12,10 +12,11 @@ and cross-student carry-forward defects likely.
 ## Decision
 
 Put domain transformations behind `createMonitoringAnalytics()`. Deduplicate
-deterministically, apply Buddy and Command LOCF chronologically within one
-student only, calculate sample statistics, classify alerts from latest valid
-observations, and prevent historical room views from selecting future
-assessments.
+deterministically, calculate population statistics and alerts from observed
+values only, and exclude logs after the explicit local-date as-of cutoff.
+Apply Buddy and Command LOCF chronologically within one student only for
+labeled presentation continuity. Prevent historical room views from selecting
+future assessments.
 
 Expose screen-shaped projections through a small Interface. Keep the Module
 free of React and Firebase.

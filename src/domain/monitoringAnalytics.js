@@ -5,6 +5,12 @@ function round(value) {
   return Number(value.toFixed(2));
 }
 
+function getLocalIsoDate() {
+  const now = new Date();
+  const localTime = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return localTime.toISOString().slice(0, 10);
+}
+
 function calculateStats(values) {
   const valid = values.filter(Number.isFinite);
   if (valid.length === 0) return { mean: null, sd: null };
@@ -174,10 +180,16 @@ function createResilienceTrend(assessments) {
   });
 }
 
-export function createMonitoringAnalytics({ students = [], logs = [], assessments = [] } = {}) {
+export function createMonitoringAnalytics({
+  students = [],
+  logs = [],
+  assessments = [],
+  asOfDate = getLocalIsoDate(),
+} = {}) {
   const studentList = [...new Map(students.map(student => [student.id, student])).values()];
   const studentById = new Map(studentList.map(student => [student.id, student]));
-  const processedLogs = applyLocf(deduplicateLogs(logs));
+  const observedLogs = deduplicateLogs(logs).filter(log => log.date <= asOfDate);
+  const presentationLogs = applyLocf(observedLogs);
   const assessmentList = deduplicateAssessments(assessments).sort(compareByWeekThenId);
   const assessmentsByStudent = new Map();
 
@@ -198,12 +210,12 @@ export function createMonitoringAnalytics({ students = [], logs = [], assessment
         ? studentList
         : studentList.filter(student => student.demographics?.gender === gender);
       const filteredIds = new Set(filteredStudents.map(student => student.id));
-      const filteredLogs = processedLogs.filter(log => filteredIds.has(log.studentId));
+      const filteredLogs = observedLogs.filter(log => filteredIds.has(log.studentId));
       const filteredAssessments = assessmentList.filter(assessment => (
         filteredIds.has(assessment.studentId)
       ));
       const latestLogByStudent = new Map();
-      for (const log of processedLogs) {
+      for (const log of observedLogs) {
         const current = latestLogByStudent.get(log.studentId);
         if (!current || compareByDateThenId(current, log) < 0) {
           latestLogByStudent.set(log.studentId, log);
@@ -232,7 +244,7 @@ export function createMonitoringAnalytics({ students = [], logs = [], assessment
 
     getRoomStatus({ date } = {}) {
       const observationByStudent = new Map();
-      for (const log of processedLogs) {
+      for (const log of presentationLogs) {
         if (log.date === date) observationByStudent.set(log.studentId, log);
       }
 
@@ -274,7 +286,7 @@ export function createMonitoringAnalytics({ students = [], logs = [], assessment
       const student = studentById.get(studentId);
       if (!student) return null;
 
-      const studentLogs = processedLogs
+      const studentLogs = presentationLogs
         .filter(log => log.studentId === studentId)
         .sort(compareByDateThenId);
       const studentAssessments = (assessmentsByStudent.get(studentId) ?? []).slice();

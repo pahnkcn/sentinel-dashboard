@@ -111,6 +111,51 @@ test('classifies alerts from each student latest observation', () => {
   });
 });
 
+test('keeps presentation-only LOCF out of population statistics and alerts', () => {
+  const analytics = createMonitoringAnalytics({
+    students: [student('a'), student('b')],
+    logs: [
+      log('a_observed', 'a', '2026-05-12', { self: 1, buddy: 1, command: 4 }),
+      log('a_missing', 'a', '2026-05-13', { self: 4 }),
+      log('b_observed', 'b', '2026-05-13', { self: 2, buddy: 3, command: 2 }),
+    ],
+    asOfDate: '2026-05-13',
+  });
+
+  const overview = analytics.getOverview();
+  const individual = analytics.getIndividual({ studentId: 'a' });
+
+  assert.equal(overview.populationTrend[0].buddy, 2);
+  assert.deepEqual(overview.alerts, {
+    red3: 0,
+    redSelfPlus: 0,
+    psychiatricCare: 0,
+  });
+  assert.equal(individual.fourColorTrend[1].buddy, 1);
+  assert.equal(individual.fourColorTrend[1].isBuddyCF, true);
+});
+
+test('excludes future-dated observations from current projections', () => {
+  const analytics = createMonitoringAnalytics({
+    students: [student('a')],
+    logs: [
+      log('current', 'a', '2026-05-13', { self: 1, buddy: 1, command: 1 }),
+      log('future', 'a', '2026-05-14', { self: 4, buddy: 4, command: 4 }),
+    ],
+    asOfDate: '2026-05-13',
+  });
+
+  assert.deepEqual(analytics.getOverview().alerts, {
+    red3: 0,
+    redSelfPlus: 0,
+    psychiatricCare: 0,
+  });
+  assert.deepEqual(
+    analytics.getIndividual({ studentId: 'a' }).fourColorTrend.map(point => point.date),
+    ['2026-05-13'],
+  );
+});
+
 test('room status never uses an assessment from a later week', () => {
   const analytics = createMonitoringAnalytics({
     students: [student('a')],

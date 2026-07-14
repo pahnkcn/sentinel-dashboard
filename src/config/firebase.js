@@ -4,7 +4,6 @@ import {
   initializeAppCheck,
 } from 'firebase/app-check';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
 
 const defaultFirebaseConfig = {
   apiKey: 'AIzaSyBNNcFjfkIko-mN9zpATT_lD0FQuX5wDdA',
@@ -25,7 +24,7 @@ export const firebaseConfig = {
 };
 
 const isNewApp = getApps().length === 0;
-const app = isNewApp ? initializeApp(firebaseConfig) : getApps()[0];
+export const app = isNewApp ? initializeApp(firebaseConfig) : getApps()[0];
 const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
 
 if (isNewApp && appCheckSiteKey && typeof window !== 'undefined') {
@@ -37,4 +36,3 @@ if (isNewApp && appCheckSiteKey && typeof window !== 'undefined') {
 
 export const appCheckEnabled = Boolean(appCheckSiteKey);
 export const auth = getAuth(app);
-export const db = getFirestore(app);

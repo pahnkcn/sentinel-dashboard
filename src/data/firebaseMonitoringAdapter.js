@@ -7,7 +7,7 @@ import {
   query,
 } from 'firebase/firestore';
 
-import { db } from '../config/firebase.js';
+import { db } from '../config/firestore.js';
 import { decodeAssessment, decodeLog, decodeStudent } from '../domain/records.js';
 import { decodeSnapshot } from './decodeSnapshot.js';
 

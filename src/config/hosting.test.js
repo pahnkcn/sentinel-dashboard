@@ -25,6 +25,7 @@ test('hosting applies baseline browser security headers to every route', async (
   assert.match(headers['Strict-Transport-Security'], /max-age=63072000/);
   assert.match(headers['Permissions-Policy'], /camera=\(\)/);
   assert.equal(headers['Cross-Origin-Opener-Policy'], 'same-origin-allow-popups');
+  assert.equal(headers['X-Robots-Tag'], 'noindex, nofollow, noarchive');
 });
 
 test('script policy blocks inline execution and permits App Check Enterprise', async () => {

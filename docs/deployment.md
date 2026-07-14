@@ -111,6 +111,8 @@ Verify all of the following:
   verification fails closed after 15 seconds;
 - an offline/cache-only transition pauses analytics, and reconnecting recovers
   only after another server-confirmed snapshot;
+- a snapshot with pending local writes pauses analytics and cannot update the
+  last-verified time;
 - the displayed last-verified time is treated as point-in-time transport
   evidence, while source observation age is checked against the operational
   freshness SLA;

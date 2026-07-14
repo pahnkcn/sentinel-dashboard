@@ -18,10 +18,11 @@ hard limit plus one sentinel record. Surface connecting, ready, degraded, and
 error states with point-in-time verification metadata.
 
 Subscribe to Firestore metadata changes and allow only snapshots explicitly
-confirmed by the server. Reject cache-only snapshots before decoding, require
-initial server confirmation within 15 seconds, and fail closed on a later
-cache-only transition. Timestamp only accepted server snapshots; do not treat
-that timestamp as an independent heartbeat or as source-observation age.
+confirmed by the server with no pending local writes. Reject cache-only and
+latency-compensated snapshots before decoding, require initial committed
+server confirmation within 15 seconds, and fail closed on a later unverified
+transition. Timestamp only accepted server snapshots; do not treat that
+timestamp as an independent heartbeat or as source-observation age.
 
 Keep Firebase behind an Adapter Seam and use an in-memory Adapter in tests.
 

@@ -30,13 +30,19 @@ export function createServerSnapshotGate({
   };
 
   return {
-    accept(fromCache) {
+    accept(metadata) {
       if (closed) return false;
 
-      if (fromCache !== false) {
+      const fromServer = metadata?.fromCache === false;
+      const hasCommittedWrites = metadata?.hasPendingWrites === false;
+      if (!fromServer || !hasCommittedWrites) {
         if (status === 'verified') {
           status = 'unverified';
-          onUnverified({ code: 'snapshot-from-cache' });
+          onUnverified({
+            code: metadata?.hasPendingWrites === true
+              ? 'snapshot-has-pending-writes'
+              : 'snapshot-from-cache',
+          });
         }
         return false;
       }

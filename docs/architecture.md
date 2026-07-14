@@ -74,11 +74,12 @@ known fields. Any issue moves the public state to `degraded`; stream failures
 move it to `error`. Both states pause presentation of analytics.
 
 The Firebase Adapter requests metadata events and accepts only snapshots whose
-`fromCache` value is explicitly `false`. Cache-only snapshots are neither
-decoded nor timestamped. Every stream must receive its first server-confirmed
+`fromCache` and `hasPendingWrites` values are explicitly `false`. Cache-only
+snapshots and latency-compensated local-write overlays are neither decoded nor
+timestamped. Every stream must receive its first committed server-confirmed
 snapshot within 15 seconds; otherwise the state fails closed. A later
-cache-only transition immediately moves the state to `error`, and a subsequent
-server snapshot can recover it.
+unverified transition immediately moves the state to `error`, and a subsequent
+committed server snapshot can recover it.
 
 `lastUpdatedAt` is the time the accepted snapshot was confirmed by the server.
 It is point-in-time evidence, not an independent connection heartbeat and not

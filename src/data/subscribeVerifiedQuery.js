@@ -24,7 +24,7 @@ export function subscribeVerifiedQuery({
       streamQuery,
       { includeMetadataChanges: true },
       snapshot => {
-        if (!active || !gate.accept(snapshot.metadata.fromCache)) return;
+        if (!active || !gate.accept(snapshot.metadata)) return;
         const truncated = snapshot.docs.length > recordLimit;
         const decoded = decodeSnapshot(
           { docs: snapshot.docs.slice(0, recordLimit) },

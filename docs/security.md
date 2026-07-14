@@ -27,6 +27,7 @@ monitoring decisions.
 | Malformed or prototype-sensitive records | Strict decoders, safe IDs, known fields, quarantine |
 | Partial or unbounded data | Bounded listeners; truncation and invalid records pause analytics |
 | Cached or stale data after connection loss | Cache-only snapshots are rejected; initial server verification times out after 15 seconds; later cache transitions and stream errors pause analytics; the exact last server-confirmed time remains visible |
+| Latency-compensated local writes | Snapshots with `hasPendingWrites` are rejected and pause analytics until Firestore emits a committed server snapshot |
 | Sensitive data retained after sign-out | Last subscriber disconnect clears the shared store |
 | Privileged sign-in retained on a shared workstation | Auth uses session storage rather than Firebase's local-persistence default; closing the tab or browser clears the saved session |
 | Application errors reflected to users or logs | Generic screen UI, bounded Auth codes, fixed React failure categories |

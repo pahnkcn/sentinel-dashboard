@@ -31,30 +31,30 @@ function createHarness() {
 test('rejects initial cache data and fails closed when server verification times out', () => {
   const { gate, errors, runTimeout } = createHarness();
 
-  assert.equal(gate.accept(true), false);
+  assert.equal(gate.accept({ fromCache: true, hasPendingWrites: false }), false);
   assert.deepEqual(errors, []);
 
   runTimeout();
   assert.deepEqual(errors, [{ code: 'server-verification-timeout' }]);
 
-  assert.equal(gate.accept(true), false);
+  assert.equal(gate.accept({ fromCache: true, hasPendingWrites: false }), false);
   assert.equal(errors.length, 1);
-  assert.equal(gate.accept(false), true);
+  assert.equal(gate.accept({ fromCache: false, hasPendingWrites: false }), true);
   gate.close();
 });
 
 test('accepts server data and reports each later cache-only transition once', () => {
   const { gate, errors, wasCancelled } = createHarness();
 
-  assert.equal(gate.accept(false), true);
+  assert.equal(gate.accept({ fromCache: false, hasPendingWrites: false }), true);
   assert.equal(wasCancelled(), true);
 
-  assert.equal(gate.accept(true), false);
-  assert.equal(gate.accept(true), false);
+  assert.equal(gate.accept({ fromCache: true, hasPendingWrites: false }), false);
+  assert.equal(gate.accept({ fromCache: true, hasPendingWrites: false }), false);
   assert.deepEqual(errors, [{ code: 'snapshot-from-cache' }]);
 
-  assert.equal(gate.accept(false), true);
-  assert.equal(gate.accept(true), false);
+  assert.equal(gate.accept({ fromCache: false, hasPendingWrites: false }), true);
+  assert.equal(gate.accept({ fromCache: true, hasPendingWrites: false }), false);
   assert.deepEqual(errors, [
     { code: 'snapshot-from-cache' },
     { code: 'snapshot-from-cache' },
@@ -67,9 +67,21 @@ test('stops accepting snapshots and cancels verification after close', () => {
 
   gate.close();
   assert.equal(wasCancelled(), true);
-  assert.equal(gate.accept(false), false);
+  assert.equal(gate.accept({ fromCache: false, hasPendingWrites: false }), false);
   runTimeout();
   assert.deepEqual(errors, []);
+});
+
+test('rejects pending local writes until a committed server snapshot arrives', () => {
+  const { gate, errors } = createHarness();
+
+  assert.equal(gate.accept({ fromCache: false, hasPendingWrites: false }), true);
+  assert.equal(gate.accept({ fromCache: false, hasPendingWrites: true }), false);
+  assert.equal(gate.accept({ fromCache: false, hasPendingWrites: true }), false);
+  assert.deepEqual(errors, [{ code: 'snapshot-has-pending-writes' }]);
+
+  assert.equal(gate.accept({ fromCache: false, hasPendingWrites: false }), true);
+  gate.close();
 });
 
 test('validates required gate configuration', () => {

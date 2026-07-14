@@ -7,9 +7,9 @@ function validDecoder({ documentId, data }) {
   return { ok: true, value: { id: documentId, value: data.value } };
 }
 
-function createSnapshot({ fromCache, documents = [] }) {
+function createSnapshot({ fromCache, hasPendingWrites = false, documents = [] }) {
   return {
-    metadata: { fromCache },
+    metadata: { fromCache, hasPendingWrites },
     docs: documents.map(({ id, value }) => ({ id, data: () => ({ value }) })),
   };
 }
@@ -88,6 +88,16 @@ test('suppresses cache data, accepts server data, and recovers after a cache tra
   harness.emit(createSnapshot({ fromCache: false }));
   assert.equal(harness.nextEvents.length, 2);
   assert.equal(harness.nextEvents[1][1].receivedAt, 101);
+
+  harness.emit(createSnapshot({ fromCache: false, hasPendingWrites: true }));
+  assert.deepEqual(harness.errors.at(-1), [
+    'students',
+    { code: 'snapshot-has-pending-writes' },
+  ]);
+  assert.equal(harness.nextEvents.length, 2);
+
+  harness.emit(createSnapshot({ fromCache: false }));
+  assert.equal(harness.nextEvents.length, 3);
   harness.stop();
 });
 

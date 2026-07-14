@@ -78,12 +78,13 @@ The browser reads exactly three top-level Firestore collections:
 
 Records are decoded into strict known-field shapes before analytics can see
 them. Invalid or truncated streams pause all analytics rather than presenting
-partial results. Cache-only snapshots never enter application state: each
-stream must first be confirmed by the Firestore server, and a later
-cache-only transition pauses analytics. The displayed last-verified time is
-the point-in-time server confirmation, not an independent heartbeat or the
-age of the source observations. Domain terms, ranges, scheduled weeks, and
-LOCF rules are in [CONTEXT.md](CONTEXT.md).
+partial results. Cache-only snapshots and snapshots with pending local writes
+never enter application state: each stream must first be confirmed by the
+Firestore server with no uncommitted overlay. A later unverified transition
+pauses analytics. The displayed last-verified time is the point-in-time server
+confirmation, not an independent heartbeat or the age of the source
+observations. Domain terms, ranges, scheduled weeks, and LOCF rules are in
+[CONTEXT.md](CONTEXT.md).
 
 ## Architecture and operations
 

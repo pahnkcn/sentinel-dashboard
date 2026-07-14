@@ -42,7 +42,7 @@ data-entry or fixture-generation tool.
 - CD-RISC values are numbers from `0` through `40`.
 - GRIT values are numbers from `0` through `32`.
 - DASS-21 is scheduled for weeks `0`, `4`, `8`, and `16`; CD-RISC and GRIT are
-  scheduled for weeks `0`, `8`, and `16`.
+  required together at weeks `0`, `8`, and `16` and must be absent at week `4`.
 
 ## Security and trust
 

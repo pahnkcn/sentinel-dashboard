@@ -184,15 +184,16 @@ export function decodeAssessment({ documentId, data }) {
   if (week !== null && !ASSESSMENT_WEEKS.has(week)) {
     issues.push(invalid('week', 'must be one of 0, 4, 8, or 16'));
   }
+  const resilienceRequired = RESILIENCE_WEEKS.has(week);
   const cdRisc = readNumber(record.data.cd_risc, 'cd_risc', issues, {
     min: 0,
     max: 40,
-    nullable: true,
+    nullable: !resilienceRequired,
   });
   const grit = readNumber(record.data.grit, 'grit', issues, {
     min: 0,
     max: 32,
-    nullable: true,
+    nullable: !resilienceRequired,
   });
 
   if (week !== null && !RESILIENCE_WEEKS.has(week)) {

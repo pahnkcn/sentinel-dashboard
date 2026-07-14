@@ -157,6 +157,24 @@ test('accepts resilience scores only on their scheduled weeks', () => {
   )), ['cd_risc', 'grit']);
 });
 
+test('requires both resilience scores on weeks 0, 8, and 16', () => {
+  const decoded = decodeAssessment({
+    documentId: 'assess_001_8',
+    data: {
+      studentId: '001',
+      week: 8,
+      dass_d: 2,
+      dass_a: 2,
+      dass_s: 2,
+      cd_risc: null,
+    },
+  });
+
+  const issueFields = fields(decoded);
+  assert.ok(issueFields.includes('cd_risc'));
+  assert.ok(issueFields.includes('grit'));
+});
+
 test('rejects unscheduled weeks and malformed assessment values', () => {
   const decoded = decodeAssessment({
     documentId: 'bad_assessment',

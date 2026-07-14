@@ -1,6 +1,7 @@
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const UNSAFE_IDENTIFIERS = new Set(['__proto__', 'constructor', 'prototype']);
 const ASSESSMENT_WEEKS = new Set([0, 4, 8, 16]);
+const RESILIENCE_WEEKS = new Set([0, 8, 16]);
 
 function invalid(field, message) {
   return { field, message };
@@ -183,6 +184,25 @@ export function decodeAssessment({ documentId, data }) {
   if (week !== null && !ASSESSMENT_WEEKS.has(week)) {
     issues.push(invalid('week', 'must be one of 0, 4, 8, or 16'));
   }
+  const cdRisc = readNumber(record.data.cd_risc, 'cd_risc', issues, {
+    min: 0,
+    max: 40,
+    nullable: true,
+  });
+  const grit = readNumber(record.data.grit, 'grit', issues, {
+    min: 0,
+    max: 32,
+    nullable: true,
+  });
+
+  if (week !== null && !RESILIENCE_WEEKS.has(week)) {
+    if (cdRisc !== null) {
+      issues.push(invalid('cd_risc', 'is only scheduled for weeks 0, 8, and 16'));
+    }
+    if (grit !== null) {
+      issues.push(invalid('grit', 'is only scheduled for weeks 0, 8, and 16'));
+    }
+  }
 
   return result({
     id: record.id,
@@ -191,8 +211,8 @@ export function decodeAssessment({ documentId, data }) {
     dass_d: readNumber(record.data.dass_d, 'dass_d', issues, { min: 1, max: 5 }),
     dass_a: readNumber(record.data.dass_a, 'dass_a', issues, { min: 1, max: 5 }),
     dass_s: readNumber(record.data.dass_s, 'dass_s', issues, { min: 1, max: 5 }),
-    cd_risc: readNumber(record.data.cd_risc, 'cd_risc', issues, { min: 0, max: 40, nullable: true }),
-    grit: readNumber(record.data.grit, 'grit', issues, { min: 0, max: 32, nullable: true }),
+    cd_risc: cdRisc,
+    grit,
     drawing_note: readString(record.data.drawing_note, 'drawing_note', issues, { maxLength: 2000 }),
   }, issues);
 }

@@ -104,7 +104,7 @@ test('rejects invalid dates, numeric strings, and out-of-range observations', ()
   }
 });
 
-test('decodes scheduled assessments with nullable resilience scores', () => {
+test('decodes DASS-only assessments with nullable resilience scores', () => {
   const decoded = decodeAssessment({
     documentId: 'assess_001_4',
     data: {
@@ -123,6 +123,38 @@ test('decodes scheduled assessments with nullable resilience scores', () => {
   assert.equal(decoded.value.cd_risc, null);
   assert.equal(decoded.value.grit, null);
   assert.equal(decoded.value.drawing_note, 'reviewed');
+});
+
+test('accepts resilience scores only on their scheduled weeks', () => {
+  const valid = decodeAssessment({
+    documentId: 'assess_001_8',
+    data: {
+      studentId: '001',
+      week: 8,
+      dass_d: 2,
+      dass_a: 2,
+      dass_s: 2,
+      cd_risc: 30,
+      grit: 24,
+    },
+  });
+  const invalid = decodeAssessment({
+    documentId: 'assess_001_4',
+    data: {
+      studentId: '001',
+      week: 4,
+      dass_d: 2,
+      dass_a: 2,
+      dass_s: 2,
+      cd_risc: 30,
+      grit: 24,
+    },
+  });
+
+  assert.equal(valid.ok, true);
+  assert.deepEqual(fields(invalid).filter(field => (
+    field === 'cd_risc' || field === 'grit'
+  )), ['cd_risc', 'grit']);
 });
 
 test('rejects unscheduled weeks and malformed assessment values', () => {

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { firebaseConfig } from './config/firebase.js';
+import { canPresentMonitoringAnalytics } from './data/presentationPolicy.js';
 import { useMonitoringData } from './data/useMonitoringData.js';
 import { createMonitoringAnalytics } from './domain/monitoringAnalytics.js';
 import { ScreenErrorBoundary } from './ui/ScreenErrorBoundary.jsx';
@@ -87,7 +88,8 @@ export default function Dashboard({ authorization }) {
     ? SYNC_TIME_FORMATTER.format(new Date(lastUpdatedAt))
     : '-';
   const dataStatusLabel = DATA_STATUS_LABELS[dataStatus];
-  const dataBlocked = dataStatus === 'degraded' || dataStatus === 'error';
+  const dataPending = dataStatus === 'idle' || dataStatus === 'connecting';
+  const analyticsAllowed = canPresentMonitoringAnalytics(dataStatus);
   const activeWorkflow = WORKFLOWS[activeTab];
   const ActiveScreen = activeWorkflow.Screen;
 
@@ -181,7 +183,17 @@ export default function Dashboard({ authorization }) {
         </header>
 
         <main className="max-w-7xl">
-          {dataBlocked ? (
+          {dataPending ? (
+            <section role="status" className="rounded-2xl border border-blue-200 bg-blue-50 p-12 text-center">
+              <Clock className="mx-auto text-blue-500" size={36} />
+              <h3 className="mt-4 text-lg font-black text-slate-800">
+                กำลังยืนยันข้อมูลจากเซิร์ฟเวอร์
+              </h3>
+              <p className="mt-2 text-sm text-slate-500">
+                Analytics จะเปิดเมื่อข้อมูลทั้งสาม stream ผ่านการยืนยันครบถ้วน
+              </p>
+            </section>
+          ) : !analyticsAllowed ? (
             <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
               <ShieldCheck className="mx-auto text-slate-400" size={36} />
               <h3 className="mt-4 text-lg font-black text-slate-800">Analytics paused</h3>

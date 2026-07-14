@@ -10,6 +10,12 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { AccessGate } from './auth/AccessGate.jsx';
 import { useAuthorization } from './auth/useAuthorization.js';
 import { db, firebaseConfig } from './config/firebase.js';
+import { decodeSnapshot } from './data/decodeSnapshot.js';
+import {
+  decodeAssessment,
+  decodeLog,
+  decodeStudent,
+} from './domain/records.js';
 
 // ==========================================
 // HELPERS & CONSTANTS
@@ -75,6 +81,11 @@ function Dashboard({ authorization }) {
   const [students, setStudents] = useState([]);
   const [rawLogs, setRawLogs] = useState([]);
   const [assessments, setAssessments] = useState([]);
+  const [dataIssues, setDataIssues] = useState({
+    students: [],
+    logs: [],
+    assessments: [],
+  });
   
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(true);
@@ -84,15 +95,21 @@ function Dashboard({ authorization }) {
 
   useEffect(() => {
     const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
-      setStudents(snapshot.docs.map(d => d.data()));
+      const result = decodeSnapshot(snapshot, decodeStudent);
+      setStudents(result.records);
+      setDataIssues(current => ({ ...current, students: result.issues }));
       setLoadingStudents(false);
     });
     const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
-      setRawLogs(snapshot.docs.map(d => d.data()));
+      const result = decodeSnapshot(snapshot, decodeLog);
+      setRawLogs(result.records);
+      setDataIssues(current => ({ ...current, logs: result.issues }));
       setLoadingLogs(false);
     });
     const unsubAssessments = onSnapshot(collection(db, 'assessments'), (snapshot) => {
-      setAssessments(snapshot.docs.map(d => d.data()));
+      const result = decodeSnapshot(snapshot, decodeAssessment);
+      setAssessments(result.records);
+      setDataIssues(current => ({ ...current, assessments: result.issues }));
       setLoadingAssessments(false);
     });
     return () => { unsubStudents(); unsubLogs(); unsubAssessments(); };
@@ -103,6 +120,9 @@ function Dashboard({ authorization }) {
   const activeStudentId = students.some(student => student.id === selectedStudent)
     ? selectedStudent
     : (students[0]?.id ?? '');
+  const invalidRecordCount = dataIssues.students.length
+    + dataIssues.logs.length
+    + dataIssues.assessments.length;
 
   // ==========================================
   // LOCF LOGIC: ลากเส้นคะแนน Buddy/Command 
@@ -569,6 +589,14 @@ function Dashboard({ authorization }) {
       </div>
 
       <div className="flex-1 p-6 md:p-12 overflow-y-auto bg-[#f8fafc]">
+        {invalidRecordCount > 0 && (
+          <div role="alert" className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <p className="font-bold">ข้อมูลบางรายการไม่ผ่านการตรวจสอบ</p>
+            <p className="mt-1 text-sm">
+              ระบบละเว้น {invalidRecordCount} รายการที่มีชนิดข้อมูล ช่วงคะแนน หรือรหัสไม่ถูกต้อง
+            </p>
+          </div>
+        )}
         <header className="mb-12 flex justify-between items-end">
           <div>
             <h2 className="text-4xl font-black text-slate-900 tracking-tight">

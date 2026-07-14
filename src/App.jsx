@@ -1,9 +1,9 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Brush
 } from 'recharts';
 import { 
-  LayoutDashboard, Users, User, AlertTriangle, Activity, Clock, HeartPulse, ShieldCheck, BookOpen, Calendar
+  LayoutDashboard, Users, User, Activity, Clock, HeartPulse, ShieldCheck, BookOpen, Calendar
 } from 'lucide-react';
 
 // ==========================================
@@ -11,7 +11,7 @@ import {
 // ==========================================
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, writeBatch, doc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBNNcFjfkIko-mN9zpATT_lD0FQuX5wDdA",
@@ -117,10 +117,9 @@ export default function App() {
 
   const [selectedStudent, setSelectedStudent] = useState('');
   const [heatmapDate, setHeatmapDate] = useState(new Date().toISOString().split('T')[0]);
-
-  useEffect(() => {
-    if (students.length > 0 && !selectedStudent) setSelectedStudent(students[0].id);
-  }, [students, selectedStudent]);
+  const activeStudentId = students.some(student => student.id === selectedStudent)
+    ? selectedStudent
+    : (students[0]?.id ?? '');
 
   // ==========================================
   // LOCF LOGIC: ลากเส้นคะแนน Buddy/Command 
@@ -221,8 +220,6 @@ export default function App() {
   // RENDERS
   // ==========================================
   const renderOverview = () => {
-    const isLoading = loadingStudents || loadingLogs || loadingAssessments;
-    
     const latestLogsMap = {};
     processedLogs.forEach(l => {
       if (!latestLogsMap[l.studentId] || new Date(l.date) > new Date(latestLogsMap[l.studentId].date)) {
@@ -446,13 +443,13 @@ export default function App() {
   };
 
   const renderIndividual = () => {
-    const s = students.find(x => x.id === selectedStudent);
+    const s = students.find(x => x.id === activeStudentId);
     if (loadingStudents) return <div className="space-y-6"><Skeleton className="h-24" /><Skeleton className="h-72" /></div>;
     if (!s) return <div className="p-12 text-center text-slate-400 font-bold bg-white rounded-2xl border border-dashed border-slate-300">กรุณาเลือกนักเรียนจากเมนู</div>;
     
     // ใช้ processedLogs เพื่อให้กราฟลากเชื่อมจุด (LOCF) แบบไม่ขาดตอน
-    const sL = processedLogs.filter(l => l.studentId === selectedStudent).sort((a, b) => new Date(a.date) - new Date(b.date));
-    const sA = assessments.filter(a => a.studentId === selectedStudent).sort((a, b) => a.week - b.week);
+    const sL = processedLogs.filter(l => l.studentId === activeStudentId).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const sA = assessments.filter(a => a.studentId === activeStudentId).sort((a, b) => a.week - b.week);
     
     const resilienceIndividualData = sA.filter(a => [0, 8, 16].includes(a.week));
     const latestAssess = sA.length > 0 ? sA[sA.length - 1] : {};
@@ -461,7 +458,7 @@ export default function App() {
       <div className="space-y-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center">
           <h3 className="text-xl font-bold">ผลวิเคราะห์: <span className="text-blue-600">{s.name}</span></h3>
-          <select className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 font-bold outline-none focus:ring-2 focus:ring-blue-500" value={selectedStudent} onChange={(e) => setSelectedStudent(e.target.value)}>
+          <select className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 font-bold outline-none focus:ring-2 focus:ring-blue-500" value={activeStudentId} onChange={(e) => setSelectedStudent(e.target.value)}>
             {students.map(sx => <option key={sx.id} value={sx.id}>{sx.id} - {sx.name}</option>)}
           </select>
         </div>
@@ -552,108 +549,11 @@ export default function App() {
     );
   };
 
-  // ----------------------------------------------------
-  // ระบบจำลองข้อมูล DEMO DATA แบบ LOCF (ยิงผ่าน Cloud)
-  // ----------------------------------------------------
-  const loadDemoDataLocf = async () => {
-    if (!user) { alert('รอเชื่อมต่อฐานข้อมูลสักครู่...'); return; }
-    
-    // 🔥 เราต้องสร้างปุ่มจำลองโหลด Demo ซ่อนไว้ชั่วคราว เพราะเอาหน้า Data Entry ออกไปแล้ว
-    // แต่เพื่อให้อาจารย์ทดสอบได้ ผมใส่รหัสนี้ให้ครับ: 
-    // หากต้องการใช้ให้พิมพ์ loadDemoDataLocf() ใน Console
-    
-    try {
-      const dS = []; const dL = []; const dA = [];
-      let batch = writeBatch(db);
-      let count = 0;
-
-      for (let i = 1; i <= 10; i++) {
-        const sid = i.toString().padStart(3, '0');
-        const isHighRisk = Math.random() > 0.8;
-        let gender = i <= 6 ? 'ชาย' : 'หญิง';
-        let rm = gender === 'ชาย' ? `20${Math.ceil(i / 2)}` : `60${Math.ceil((i - 6) / 2)}`;
-        
-        dS.push({ 
-          id: sid, name: `นรม. ${gender === 'ชาย' ? 'สมชาย' : 'สมหญิง'} ${sid}`, room: rm, baseline: isHighRisk ? 'High' : 'Low', tag: '', 
-          demographics: { 
-            age: 18 + Math.floor(Math.random()*3), gender: gender, region: 'กทม.', school: 'มัธยมปลาย', 
-            familyHistory: isHighRisk?'มี(ซึมเศร้า)':'ไม่มี', financialBurden: isHighRisk?'สูง':'ไม่มี',
-            physicalIssueDetail: isHighRisk?'หอบหืด':'', mentalIssueDetail: isHighRisk?'เครียดสะสม':'', mentalSeverity: isHighRisk?3:1
-          } 
-        });
-        
-        [0, 4, 8, 16].forEach(wk => {
-          let stressBase = isHighRisk ? 3.5 : 1.5;
-          let d = Math.max(1, Math.min(5, Math.round(stressBase + (Math.random()*1.5))));
-          let a = Math.max(1, Math.min(5, Math.round(stressBase + (Math.random()*1.5))));
-          let s = Math.max(1, Math.min(5, Math.round(stressBase + (Math.random()*2))));
-          let cdRisc = Math.max(0, Math.min(40, (isHighRisk ? 15 : 32) + (wk*0.5) + (Math.random()*5 - 2)));
-          let grit = Math.max(0, Math.min(32, (isHighRisk ? 12 : 24) + (wk*0.3) + (Math.random()*4 - 2)));
-
-          dA.push({ 
-            id: `assess_${sid}_${wk}`, studentId: sid, week: wk, 
-            dass_d: d, dass_a: a, dass_s: s, 
-            cd_risc: (wk===0||wk===8||wk===16)?Math.round(cdRisc):null, 
-            grit: (wk===0||wk===8||wk===16)?Math.round(grit):null, 
-            drawing_note: wk===0?'วาดภาพปกติ':'' 
-          });
-        });
-
-        // จำลองข้อมูล 16 สัปดาห์
-        for (let w = 1; w <= 16; w++) {
-          for (let d_idx = 0; d_idx < 7; d_idx++) {
-            // สมมติวันที่ 12 พ.ค. 2026 เป็นวันอังคาร
-            let date = new Date(2026, 4, 12);
-            date.setDate(date.getDate() + ((w - 1) * 7) + d_idx);
-            const dStr = date.toISOString().split('T')[0];
-            const dayOfWeek = date.getDay(); // 0=อาทิตย์, 3=พุธ
-            
-            let mental = isHighRisk ? (w>=6 && w<=10 ? 3 : 2) : (w>=7 && w<=9 ? 2 : 1);
-            if (Math.random() > 0.7) mental = Math.max(1, mental - 1);
-            let physInj = Math.random() > 0.95 ? (Math.random() > 0.5 ? 3 : 2) : 1;
-
-            // 🔥 พระเอกอยู่ตรงนี้: ประเมิน Buddy กับ Command เฉพาะวันพุธ และ อาทิตย์ เท่านั้น!
-            let isEvalDay = (dayOfWeek === 0 || dayOfWeek === 3);
-            let buddyCmd = isEvalDay ? mental : null;
-
-            dL.push({ 
-              id: `log_${sid}_${dStr}`, studentId: sid, date: dStr, week: w, 
-              self: mental, buddy: buddyCmd, command: buddyCmd, physicalInjury: physInj 
-            });
-          }
-        }
-      }
-
-      // Helper function to process batches internal
-      const commitItems = async (colName, items) => {
-        for (let i = 0; i < items.length; i += 400) {
-          const b = writeBatch(db);
-          items.slice(i, i + 400).forEach(item => {
-            b.set(doc(db, colName, item.id.toString()), item);
-          });
-          await b.commit();
-        }
-      };
-
-      await commitItems('students', dS);
-      await commitItems('assessments', dA);
-      await commitItems('logs', dL);
-      
-      alert('สร้างข้อมูลจำลอง LOCF แบบ 4 Sheet สำเร็จแล้ว รีเฟรชหน้าเว็บได้เลยครับ!');
-    } catch (err) {
-      console.error(err);
-      alert('เกิดข้อผิดพลาดในการโหลด Demo');
-    }
-  };
-
   return (
     <div className="min-h-screen bg-[#f8fafc] font-sans text-slate-900 flex flex-col md:flex-row">
       <div className="w-full md:w-72 bg-[#0f172a] text-white flex flex-col md:min-h-screen sticky top-0 z-20 shadow-2xl">
         <div className="p-8 text-center border-b border-white/5">
-          <div 
-             className="w-16 h-16 bg-blue-500 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-blue-500/30 cursor-pointer"
-             onDoubleClick={loadDemoDataLocf} // ดับเบิลคลิกที่โลโก้เพื่อโหลด Demo (เพราะเอาปุ่มออกไปแล้ว)
-          >
+          <div className="w-16 h-16 bg-blue-500 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-blue-500/30">
             <HeartPulse size={32} className="text-white" />
           </div>
           <h1 className="text-2xl font-black tracking-tighter">SENTINEL</h1>

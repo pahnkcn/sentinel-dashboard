@@ -8,7 +8,8 @@ decision support, not a diagnostic or data-entry system.
 Access is restricted to verified Firebase Authentication users whose ID token
 contains `sentinelRole: "clinician"` or `sentinelRole: "admin"`. Firestore
 Security Rules are the authorization boundary; the browser is never allowed to
-write monitoring records.
+write monitoring records. Authentication uses tab-scoped session persistence,
+so closing the tab or browser clears the saved sign-in state.
 
 ## Requirements
 

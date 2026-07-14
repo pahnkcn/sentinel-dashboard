@@ -54,6 +54,9 @@ dashboard and Firestore code are loaded lazily after authorization.
 Firebase configuration has no repository fallback. Vite and the runtime both
 validate required values. Development mode is forced onto fixed localhost Auth
 and Firestore emulators; every remote mode requires App Check configuration.
+Auth is initialized with browser-session persistence rather than the Firebase
+web default, so a privileged sign-in is not retained after its tab or browser
+session closes.
 
 Client-side authorization improves UX but is not trusted. `firestore.rules`
 repeats the role and verified-email check and denies all client writes.

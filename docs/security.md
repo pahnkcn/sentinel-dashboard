@@ -28,6 +28,7 @@ monitoring decisions.
 | Partial or unbounded data | Bounded listeners; truncation and invalid records pause analytics |
 | Cached or stale data after connection loss | Cache-only snapshots are rejected; initial server verification times out after 15 seconds; later cache transitions and stream errors pause analytics; the exact last server-confirmed time remains visible |
 | Sensitive data retained after sign-out | Last subscriber disconnect clears the shared store |
+| Privileged sign-in retained on a shared workstation | Auth uses session storage rather than Firebase's local-persistence default; closing the tab or browser clears the saved session |
 | Application errors reflected to users or logs | Generic screen UI, bounded Auth codes, fixed React failure categories |
 | Cross-site script and framing attacks | Hosting CSP, frame denial, MIME sniffing protection, HSTS, permissions policy |
 | Unnecessary pre-auth code/data path | Dashboard, Firestore, and charts load only after authorization |
@@ -69,6 +70,9 @@ that cannot reconstruct individuals. See ADR 0005.
 ## Residual constraints
 
 - Sensitive records remain in memory while an authorized dashboard is open.
+- Session persistence limits saved Auth state to the current tab, but it is not
+  an inactivity timeout. Staff must lock managed devices and close the tab or
+  sign out when leaving the workstation.
 - Removing a claim and revoking refresh tokens prevents future valid sessions,
   but an already-issued ID token can remain usable until it expires. For an
   emergency, deploy a temporary Security Rules deny for the affected UID—or

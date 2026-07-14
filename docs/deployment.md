@@ -41,6 +41,12 @@ Review and test the final rule before restoring normal service.
 
 Do not add client-side claim management to this repository.
 
+This release changes Firebase Auth from its browser-local default to
+tab-scoped session persistence. Before rollout over an older deployment,
+revoke legacy refresh tokens according to the incident policy and require
+staff to close old tabs or clear the site's stored data. The new client does
+not load a locally persisted user into the authorized dashboard.
+
 ## 3. Configure App Check
 
 1. Register the web app with a reCAPTCHA Enterprise score-based site key.
@@ -97,6 +103,8 @@ Verify all of the following:
 - signed-out users see only the access gate;
 - an ordinary verified user and an unverified claimed user are denied;
 - clinician and admin users can read all three workflows;
+- closing the signed-in tab or browser requires authentication in a new
+  session;
 - create, update, and delete attempts remain denied;
 - invalid/truncated data pauses analytics;
 - an initial cache-only snapshot never reaches analytics and missing server

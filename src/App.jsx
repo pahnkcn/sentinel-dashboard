@@ -1,21 +1,14 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Brush
 } from 'recharts';
 import { 
   LayoutDashboard, Users, User, Activity, Clock, HeartPulse, ShieldCheck, BookOpen, Calendar
 } from 'lucide-react';
-import { collection, onSnapshot } from 'firebase/firestore';
-
 import { AccessGate } from './auth/AccessGate.jsx';
 import { useAuthorization } from './auth/useAuthorization.js';
-import { db, firebaseConfig } from './config/firebase.js';
-import { decodeSnapshot } from './data/decodeSnapshot.js';
-import {
-  decodeAssessment,
-  decodeLog,
-  decodeStudent,
-} from './domain/records.js';
+import { firebaseConfig } from './config/firebase.js';
+import { useMonitoringData } from './data/useMonitoringData.js';
 
 // ==========================================
 // HELPERS & CONSTANTS
@@ -78,51 +71,40 @@ function Dashboard({ authorization }) {
   const [activeTab, setActiveTab] = useState('overview');
 
   const { user, role, signOut } = authorization;
-  const [students, setStudents] = useState([]);
-  const [rawLogs, setRawLogs] = useState([]);
-  const [assessments, setAssessments] = useState([]);
-  const [dataIssues, setDataIssues] = useState({
-    students: [],
-    logs: [],
-    assessments: [],
-  });
-  
-  const [loadingStudents, setLoadingStudents] = useState(true);
-  const [loadingLogs, setLoadingLogs] = useState(true);
-  const [loadingAssessments, setLoadingAssessments] = useState(true);
+  const monitoringData = useMonitoringData();
+  const {
+    students,
+    logs: rawLogs,
+    assessments,
+    loading,
+    issueCount: invalidRecordCount,
+    status: dataStatus,
+    truncatedStreams,
+    lastUpdatedAt,
+  } = monitoringData;
+  const loadingStudents = loading.students;
+  const loadingLogs = loading.logs;
+  const loadingAssessments = loading.assessments;
 
   const [genderFilter, setGenderFilter] = useState('all');
-
-  useEffect(() => {
-    const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
-      const result = decodeSnapshot(snapshot, decodeStudent);
-      setStudents(result.records);
-      setDataIssues(current => ({ ...current, students: result.issues }));
-      setLoadingStudents(false);
-    });
-    const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
-      const result = decodeSnapshot(snapshot, decodeLog);
-      setRawLogs(result.records);
-      setDataIssues(current => ({ ...current, logs: result.issues }));
-      setLoadingLogs(false);
-    });
-    const unsubAssessments = onSnapshot(collection(db, 'assessments'), (snapshot) => {
-      const result = decodeSnapshot(snapshot, decodeAssessment);
-      setAssessments(result.records);
-      setDataIssues(current => ({ ...current, assessments: result.issues }));
-      setLoadingAssessments(false);
-    });
-    return () => { unsubStudents(); unsubLogs(); unsubAssessments(); };
-  }, [user]);
 
   const [selectedStudent, setSelectedStudent] = useState('');
   const [heatmapDate, setHeatmapDate] = useState(new Date().toISOString().split('T')[0]);
   const activeStudentId = students.some(student => student.id === selectedStudent)
     ? selectedStudent
     : (students[0]?.id ?? '');
-  const invalidRecordCount = dataIssues.students.length
-    + dataIssues.logs.length
-    + dataIssues.assessments.length;
+  const lastSyncLabel = lastUpdatedAt
+    ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'short', timeStyle: 'medium' })
+        .format(new Date(lastUpdatedAt))
+    : '-';
+  const dataStatusLabel = {
+    idle: 'Starting',
+    connecting: 'Connecting',
+    ready: 'Current',
+    degraded: 'Incomplete',
+    error: 'Failed',
+  }[dataStatus];
+  const dataBlocked = dataStatus === 'degraded' || dataStatus === 'error';
 
   // ==========================================
   // LOCF LOGIC: ลากเส้นคะแนน Buddy/Command 
@@ -574,10 +556,13 @@ function Dashboard({ authorization }) {
           ))}
         </nav>
         <div className="p-6 border-t border-white/5 bg-slate-900/50">
-          <p className="truncate text-[10px] font-bold uppercase tracking-widest text-emerald-400">
-            Authorized · {role}
+          <p className={`truncate text-[10px] font-bold uppercase tracking-widest ${dataStatus === 'ready' ? 'text-emerald-400' : dataStatus === 'error' ? 'text-rose-400' : 'text-amber-400'}`}>
+            Data · {dataStatusLabel}
           </p>
-          <p className="mt-1 truncate text-[10px] text-slate-500">{user.email}</p>
+          <p className="mt-1 truncate text-[10px] text-slate-500">Last verified sync · {lastSyncLabel}</p>
+          <p className="mt-3 truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            {role} · {user.email}
+          </p>
           <button
             type="button"
             onClick={signOut}
@@ -589,11 +574,21 @@ function Dashboard({ authorization }) {
       </div>
 
       <div className="flex-1 p-6 md:p-12 overflow-y-auto bg-[#f8fafc]">
-        {invalidRecordCount > 0 && (
-          <div role="alert" className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-            <p className="font-bold">ข้อมูลบางรายการไม่ผ่านการตรวจสอบ</p>
+        {dataStatus === 'error' && (
+          <div role="alert" className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900">
+            <p className="font-bold">การเชื่อมต่อข้อมูลล้มเหลว</p>
             <p className="mt-1 text-sm">
-              ระบบละเว้น {invalidRecordCount} รายการที่มีชนิดข้อมูล ช่วงคะแนน หรือรหัสไม่ถูกต้อง
+              ระบบหยุดแสดงผลวิเคราะห์เพื่อป้องกันการใช้ข้อมูลเก่าหรือข้อมูลไม่ครบ
+            </p>
+          </div>
+        )}
+        {dataStatus === 'degraded' && (
+          <div role="alert" className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <p className="font-bold">ข้อมูลไม่ครบถ้วน — หยุดแสดงผลวิเคราะห์</p>
+            <p className="mt-1 text-sm">
+              {invalidRecordCount > 0 && `พบข้อมูลไม่ผ่านการตรวจสอบ ${invalidRecordCount} รายการ`}
+              {invalidRecordCount > 0 && truncatedStreams.length > 0 && ' และ'}
+              {truncatedStreams.length > 0 && `พบข้อมูลเกินขีดจำกัดใน ${truncatedStreams.join(', ')}`}
             </p>
           </div>
         )}
@@ -605,14 +600,29 @@ function Dashboard({ authorization }) {
               {activeTab === 'individual' && 'Individual Tracking'}
             </h2>
             <p className="text-slate-400 text-sm mt-3 flex items-center font-bold font-mono">
-              <Clock size={16} className="mr-2" /> live syncing from {firebaseConfig.projectId}
+              <Clock size={16} className="mr-2" />
+              {dataStatus === 'ready'
+                ? `verified sync from ${firebaseConfig.projectId} · ${lastSyncLabel}`
+                : `sync status: ${dataStatusLabel}`}
             </p>
           </div>
         </header>
         <main className="max-w-7xl">
-          {activeTab === 'overview' && renderOverview()}
-          {activeTab === 'heatmap' && renderHeatmap()}
-          {activeTab === 'individual' && renderIndividual()}
+          {dataBlocked ? (
+            <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
+              <ShieldCheck className="mx-auto text-slate-400" size={36} />
+              <h3 className="mt-4 text-lg font-black text-slate-800">Analytics paused</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                แก้ไขการเชื่อมต่อหรือข้อมูลต้นทางให้ครบถ้วนก่อนใช้ผลติดตาม
+              </p>
+            </section>
+          ) : (
+            <>
+              {activeTab === 'overview' && renderOverview()}
+              {activeTab === 'heatmap' && renderHeatmap()}
+              {activeTab === 'individual' && renderIndividual()}
+            </>
+          )}
         </main>
       </div>
     </div>

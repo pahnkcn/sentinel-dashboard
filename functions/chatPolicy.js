@@ -1,5 +1,6 @@
-const MAX_QUESTION_LENGTH = 1_200;
-const DATASET_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const MAX_MESSAGE_COUNT = 12;
+const MAX_MESSAGE_LENGTH = 3_000;
+const MAX_CONTEXT_BYTES = 350_000;
 const MAX_ANSWER_LENGTH = 8_000;
 const ALLOWED_COLORS = new Set(['blue', 'emerald', 'amber', 'rose', 'violet', 'slate']);
 const ALLOWED_CHART_TYPES = new Set(['line', 'bar', 'area']);
@@ -157,34 +158,34 @@ export const CHAT_RESPONSE_SCHEMA = Object.freeze({
 
 export function validateChatRequest(body) {
   if (!isObject(body)) return { ok: false, code: 'invalid-body' };
-  if (Object.keys(body).some(
-    key => !['question', 'expectedDatasetVersion'].includes(key),
-  )) {
-    return { ok: false, code: 'client-context-forbidden' };
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    return { ok: false, code: 'missing-messages' };
   }
-  if (typeof body.question !== 'string' || !body.question.trim()) {
-    return { ok: false, code: 'missing-question' };
+
+  const messages = body.messages.slice(-MAX_MESSAGE_COUNT).map(message => {
+    if (!isObject(message) || !['user', 'assistant'].includes(message.role)) return null;
+    const content = boundedString(message.content, MAX_MESSAGE_LENGTH);
+    return content ? { role: message.role, content } : null;
+  });
+  if (messages.some(message => message === null)) {
+    return { ok: false, code: 'invalid-message' };
   }
-  const question = body.question.trim();
-  if (
-    question.length > MAX_QUESTION_LENGTH
-    || Buffer.byteLength(question, 'utf8') > MAX_QUESTION_LENGTH * 4
-  ) {
-    return { ok: false, code: 'question-too-large' };
+  if (messages.at(-1)?.role !== 'user') {
+    return { ok: false, code: 'last-message-must-be-user' };
   }
-  const expectedDatasetVersion = boundedString(body.expectedDatasetVersion, 128);
-  if (
-    !expectedDatasetVersion
-    || !DATASET_VERSION_PATTERN.test(expectedDatasetVersion)
-  ) {
-    return { ok: false, code: 'invalid-dataset-version' };
+  if (!isObject(body.context)) return { ok: false, code: 'invalid-context' };
+
+  const contextJson = JSON.stringify(body.context);
+  if (Buffer.byteLength(contextJson, 'utf8') > MAX_CONTEXT_BYTES) {
+    return { ok: false, code: 'context-too-large' };
   }
+
   return {
     ok: true,
     value: {
-      question,
-      expectedDatasetVersion,
-      messages: [{ role: 'user', content: question }],
+      messages,
+      context: body.context,
+      contextJson,
     },
   };
 }
@@ -196,13 +197,8 @@ function normalizeTable(table) {
 
   const rows = Array.isArray(table.rows)
     ? table.rows.slice(0, 20).map(row => {
-        if (!Array.isArray(row)) {
-          return Array.from({ length: columns.length }, () => '');
-        }
-        return Array.from(
-          { length: columns.length },
-          (_, index) => boundedString(row[index], 160),
-        );
+        const normalized = boundedStrings(row, columns.length, 160);
+        return Array.from({ length: columns.length }, (_, index) => normalized[index] ?? '');
       })
     : [];
 

@@ -20,34 +20,16 @@ flowchart LR
   Analytics --> Overview["Overview screen"]
   Analytics --> Room["Room Status screen"]
   Analytics --> Individual["Individual screen"]
-  Shell --> Chat["Sentinel Analyst UI"]
-  Chat -->|"question + expected dataset version"| Function["Authenticated chat Function"]
-  Function -->|"Admin SDK: exact current paths"| Repository["Server monitoring repository"]
-  Repository --> Manifest
-  Repository --> Store
-  Repository --> ServerVerify["Bounds + decode + references + manifest re-check"]
-  ServerVerify --> ServerAnalytics["Shared deterministic analytics"]
-  ServerAnalytics --> Privacy["Intent and privacy compiler"]
-  Privacy -->|"privacy / safety / causal / clarification"| Local["Local-only policy response"]
-  Privacy -->|"individual / people / room / structured aggregate"| Derived["Deterministic local analysis"]
-  Privacy -->|"available cohort trend directions only"| Model["OpenRouter / z-ai/glm-5.2 / pinned provider / ZDR"]
-  Model --> Output["Three-field narrative schema + disclosure validation"]
-  Output -->|"valid answer / confidence / follow-ups"| Merge["Merge exact deterministic evidence"]
-  Model -.->|"provider / credit / timeout failure"| Fallback["Precomputed deterministic fallback"]
-  Output -.->|"schema / disclosure failure"| Fallback
-  Local --> Chat
-  Derived --> Chat
-  Merge --> Chat
-  Fallback --> Chat
+  Analytics --> Context["Question-aware chat context"]
+  Context --> Function["Authenticated chat Function"]
+  Function --> Model["One OpenRouter model / ZDR"]
+  Model --> Function
+  Function --> Chat["Validated text / table / chart"]
 ```
 
 The composition direction is one-way. Screens know the analytics Interface,
-not Firestore. Browser snapshots must pass through Security Rules, server
-snapshot verification, decoding, and lifecycle state before they reach screen
-analytics. Chat uses an independent privileged server read: its Admin SDK
-repository bypasses Security Rules and must preserve equivalent exact-path,
-bounded-read, decoding, referential-integrity, and manifest-version invariants
-before the disclosure compiler can run.
+not Firestore. Firestore snapshots must pass through decoding and lifecycle
+state before they reach analytics.
 
 ## Design vocabulary
 
@@ -166,83 +148,39 @@ new observation.
 
 ### Sentinel Analyst Module
 
-The authorized dashboard lazily loads the floating assistant. The browser sends
-the same-origin `/api/chat` Function only the current question and the exact
-dataset version currently displayed. It does not construct or submit an AI
-context, raw Firestore records, or prior assistant turns. The Function repeats
-verified-email, exact-role, and App Check authorization and rejects unknown body
-fields or a stale browser dataset version.
-
-The server monitoring repository reads `monitoringManifests/current` with the
-Admin SDK, loads only the three known streams with limit-plus-one sentinels,
-decodes each document, checks every log and assessment reference, and reads the
-manifest again before publishing an immutable in-memory dataset. Because Admin
-SDK reads bypass Firestore Security Rules, this repository and least-privilege
-IAM form a separate privileged boundary. Its decoded dataset uses the same pure
-domain implementation as browser analytics.
-
-The privacy compiler performs deterministic intent, metric, negation, week
-range, top-K, and entity resolution. It has three primary outcomes:
-
-1. Restricted prompt, diagnosis, causal-evidence, unresolved-reference,
-   over-broad, and unclear requests return a fixed local-only policy response.
-2. Every individual, people-ranking, room, coverage, latest-value,
-   week-comparison, forecast, chart, and table request returns a deterministic
-   derived response from the Function. An explicit-metric overview and any
-   population smaller than the minimum cohort size also stay on this route.
-3. Only a broad summary narrative over the eligible multi-metric population
-   overview with at least one usable cohort trend can call OpenRouter. The
-   Function sends a canonical task instead of forwarding the raw question
-   verbatim. The model facts contain only qualitative directions for metrics
-   with usable trends. They contain no exact score, count, date, student or room
-   identifier, alert status, missing-data status, drawing note, or demographic
-   narrative. The complete dynamic outbound packet is limited to 1,536 UTF-8
-   bytes.
-
-The first two outcomes execute as deterministic JavaScript inside the
-authenticated Firebase Function; they do not require an AI model on the user's
-computer and do not call OpenRouter. The third outcome still sends potentially
-sensitive qualitative aggregate information outside Firebase. OpenRouter and
-the configured provider process those qualitative directions. The Function
-pins the model to `z-ai/glm-5.2`, requires one exact approved provider, disables
-OpenRouter provider fallback, requires strict structured-output parameters,
-and sends `data_collection: "deny"` plus `zdr: true`. If no exact provider is
-configured, the request fails closed to the deterministic application
-fallback. These routing controls reduce disclosure and retention but do not
-create a no-egress system.
-
-Before the broad aggregate call, the Function prepares a deterministic overview
-payload. It returns that payload when the API key or configuration is
-unavailable, provider capacity or credit fails, the request times out, or model
-schema/disclosure validation fails. This application-layer fallback is
-different from provider fallback, which remains disabled. A fallback may be
-selected after an external request was already attempted, so it is not evidence
-of zero egress; response privacy metadata records that distinction.
+The authorized dashboard lazily loads the floating assistant. Its context
+builder consumes the same Monitoring Analytics Interface and verified records
+as the workflow screens. Aggregate questions omit identifiable student
+profiles. Name, ID, room, ranking, and follow-up language selects only the
+relevant compact profiles; complete longitudinal detail is capped and included
+only for explicitly matched students. Future-dated observations remain
+withheld.
 
 Prediction requests use a deterministic, bounded ordinary-least-squares trend
-computed and rendered on the server and remain exploratory decision support
-rather than diagnosis. The provider output limit is 800 tokens and its strict
-schema has only `answer`, `confidence`, and `followUps`; digits and undisclosed
-entity tokens fail validation. After validation, the Function merges exact
-deterministic highlights, data coverage, and method note into the UI payload.
-Exact scores, counts, and dates therefore remain server-side even when the
-narrative answer is model-backed. Chat history remains only in React memory and
-is not resent to the model; it is cleared on sign-out or page close.
+computed in the browser from verified points. The model may explain or chart
+that projection but is instructed not to invent another forecast. This is
+exploratory decision support, not clinical diagnosis.
+
+The browser never receives the OpenRouter key. It sends a Firebase ID token,
+App Check token, bounded conversation, and question-aware context to the
+same-origin `/api/chat` Function. The Function repeats verified-email and exact
+role authorization and applies a per-instance request limit. It calls one
+configured OpenRouter model with the relevant verified context, a strict JSON
+schema, and ZDR provider routing. The response is normalized to a fixed text,
+highlight, table, and chart shape before React renders it. Chat history stays
+in component memory and is cleared on sign-out or page close.
 
 ## Dependency rules
 
 1. `auth/` may depend on Firebase Auth and shared config, never Firestore.
 2. `data/` may depend on decoders and an infrastructure Adapter, never screens.
-3. The canonical modules in `functions/domain/` stay framework- and
-   Firebase-free; browser-facing `src/domain/` entry points re-export them so
-   browser and server analytics cannot silently diverge.
+3. `domain/` stays framework- and Firebase-free.
 4. `screens/` consume the analytics Interface and loading state, never raw
    snapshots or Firebase SDKs.
 5. `App.jsx` is the authorization composition root; `Dashboard.jsx` is the
    authorized workflow composition root.
-6. Browser `chat/` sends only the question and expected dataset version. The
-   server Function owns provider credentials, server retrieval, privacy
-   compilation, outbound disclosure enforcement, and output hydration.
+6. `chat/` may consume analytics and authenticated public Interfaces, while the
+   server Function owns provider credentials and repeats authorization.
 
 These rules preserve Depth and Locality. New data sources should implement the
 Adapter Seam; new presentation variants should consume existing analytics

@@ -227,15 +227,7 @@ function RoomSection({ room }) {
 }
 
 export const RoomStatusScreen = memo(function RoomStatusScreen({ analytics, loading }) {
-  const observationDates = useMemo(
-    () => analytics.listObservationDates(),
-    [analytics],
-  );
-  const firstObservationDate = observationDates[0];
-  const latestObservationDate = observationDates.at(-1);
-  const [selectedDate, setSelectedDate] = useState(
-    () => latestObservationDate ?? getLocalDate(),
-  );
+  const [selectedDate, setSelectedDate] = useState(getLocalDate);
   const roomStatus = useMemo(
     () => analytics.getRoomStatus({ date: selectedDate }),
     [analytics, selectedDate],
@@ -256,8 +248,6 @@ export const RoomStatusScreen = memo(function RoomStatusScreen({ analytics, load
             type="date"
             className="min-w-0 flex-1 rounded-lg border bg-white px-3 py-2 text-sm font-bold outline-none sm:flex-none"
             value={selectedDate}
-            min={firstObservationDate}
-            max={latestObservationDate}
             onChange={event => setSelectedDate(event.target.value)}
           />
         </div>

@@ -7,7 +7,6 @@
     "dev": "vite",
     "emulators": "npx --yes firebase-tools@14.23.0 emulators:start --only auth,firestore,functions",
     "emulators:seed": "node scripts/seed-emulators.mjs",
-    "eval:openrouter": "node scripts/evaluate-openrouter.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",

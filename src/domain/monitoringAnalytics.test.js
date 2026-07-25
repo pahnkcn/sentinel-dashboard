@@ -208,24 +208,6 @@ test('room status never uses an assessment from a later week', () => {
   assert.equal(noObservation.assessment, null);
 });
 
-test('lists available observation dates so room status can default to real data', () => {
-  const analytics = createMonitoringAnalytics({
-    students: [student('a'), student('b')],
-    logs: [
-      log('a_old', 'a', '2026-06-02'),
-      log('b_old', 'b', '2026-06-02'),
-      log('a_latest', 'a', '2026-07-20'),
-      log('future', 'a', '2026-07-27'),
-    ],
-    asOfDate: '2026-07-25',
-  });
-
-  assert.deepEqual(analytics.listObservationDates(), [
-    '2026-06-02',
-    '2026-07-20',
-  ]);
-});
-
 test('uses deterministic IDs to resolve duplicate day and week records', () => {
   const analytics = createMonitoringAnalytics({
     students: [student('a')],

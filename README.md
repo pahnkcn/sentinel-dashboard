@@ -17,8 +17,7 @@ so closing the tab or browser clears the saved sign-in state.
 - npm
 - Java 21 recommended for the Firestore Emulator
 - A Firebase web app with Google sign-in enabled
-- A dedicated OpenRouter API key with access to `z-ai/glm-5.2` for model-backed
-  Sentinel Analyst requests
+- An OpenRouter API key for Sentinel Analyst
 
 ## Local setup
 
@@ -56,12 +55,9 @@ synthetic dataset through the loopback-only emulator REST API. It refuses
 non-`demo-*` projects and non-loopback hosts; it is not included in the browser
 client and cannot write to a remote Firebase project.
 
-Set the emulator-only OpenRouter secret in `functions/.secret.local`; never
-commit that file or copy its value into a `VITE_*` variable. The browser calls
-the Functions emulator through Vite's same-origin `/api/chat` proxy, so the key
-is never embedded in browser JavaScript. Set `OPENROUTER_PROVIDER` in
-`functions/.env.local` to the exact provider slug approved for the synthetic
-test; a missing value fails closed to deterministic analysis.
+Set the real local-only OpenRouter key in `functions/.secret.local`. The
+browser calls the Functions emulator through Vite's same-origin `/api/chat`
+proxy, so the key is never embedded in browser JavaScript.
 
 Remote builds use `.env.example` as a template. Every placeholder must be
 replaced, `VITE_FIREBASE_USE_EMULATORS` must be `false`, and an App Check site
@@ -83,9 +79,7 @@ administrator provisions the required custom claim. See
 | --- | --- |
 | `npm run emulators` | Start local Auth and Firestore emulators using the safe demo project |
 | `npm run emulators:seed` | Publish synthetic local data to the running Firestore emulator |
-| `npm test` | Unit tests for auth, hosting policy, decoding, data lifecycle, analytics, server retrieval, and AI disclosure policy |
-| `npm run eval:openrouter -- --compile-only` | Compile synthetic privacy cases and measure disclosure without network egress |
-| `npm run eval:openrouter -- --provider APPROVED_SLUG` | Run synthetic model evaluation against the exact reviewed provider |
+| `npm test` | Unit tests for auth, hosting policy, decoding, data lifecycle, and analytics |
 | `npm run test:rules` | Firestore rules integration tests in the emulator |
 | `npm run lint` | ESLint checks |
 | `npm run build` | Production build and code-splitting verification |
@@ -127,56 +121,19 @@ in [CONTEXT.md](CONTEXT.md).
 ## Sentinel Analyst
 
 The floating assistant appears only after an authorized user opens the
-dashboard. The browser sends only the current question and the dataset version
-shown on screen; it never supplies Firestore records, an AI context object, or
-prior assistant messages. The authenticated Function independently reads the
-exact current manifest and bounded versioned collections, decodes every record,
-checks references, and rejects the request if the browser and server dataset
-versions differ.
+dashboard. It works from the same verified, fail-closed dataset as the three
+workflow screens. General questions receive aggregate context; student and room
+details are selected only when a question requires them. One configured
+OpenRouter model receives that question-aware context and returns a strict
+structured response for validated text, tables, and Recharts visualizations.
+Exploratory predictions use a bounded linear trend and are always labeled as
+decision support rather than diagnosis.
 
-The server then routes the request through a privacy policy:
-
-- privacy, clinical-safety, causal, over-broad, and ambiguous requests return a
-  fixed local-only response without calling OpenRouter;
-- individual, people-ranking, room, coverage, latest-value, week-comparison,
-  forecast, chart, and table requests use deterministic server-side renderers
-  and do not call OpenRouter;
-- a cohort below the minimum sample size and an overview limited to an explicit
-  metric are also handled deterministically;
-- only a broad, multi-metric population-overview narrative with at least one
-  usable cohort trend can enter the model-backed route. It is reduced to a
-  canonical task plus qualitative directions for available metrics. Exact
-  scores, counts, dates, identifiers, alert status, missing-data status, and
-  narrative fields are absent; the complete dynamic outbound packet is capped
-  at 1,536 UTF-8 bytes.
-
-“Local-only” here means ordinary deterministic code inside the authenticated
-Firebase Function. It does not require an AI model on the user's computer.
-
-The configured model is pinned to `z-ai/glm-5.2`. OpenRouter is called only from
-the Function after an exact reviewed provider slug is configured, with
-OpenRouter provider fallback disabled, required structured-output parameters,
-`data_collection: "deny"`, and `zdr: true`.
-These controls reduce retention and disclosure, but they do **not** keep
-model-backed data inside Firebase: the qualitative population facts are still
-processed by OpenRouter and the selected underlying provider. Deployment
-therefore requires explicit privacy, contractual, residency, and clinical
-approval.
-
-The provider is limited to an 800-token strict narrative schema containing only
-`answer`, `confidence`, and `followUps`. Model output is untrusted: the Function
-validates it, rejects digits and undisclosed entity tokens, then merges the
-server's exact deterministic highlights, coverage, and method note. Those exact
-values are never supplied to the model. If the key is unavailable, the provider
-or credit fails, the request times out, or response validation fails, the
-Function returns the precomputed deterministic overview instead. That
-application fallback is distinct from OpenRouter provider fallback, which
-remains disabled. A fallback after an attempted provider request does not undo
-the egress that already occurred; the response privacy metadata records whether
-an external request was attempted, and each answer shows that status plus the
-dynamic disclosure size in the UI. Exploratory predictions are calculated and
-rendered deterministically on the server and remain decision support rather
-than diagnosis.
+OpenRouter is called only from the authenticated Cloud Function. Every remote
+request requires a verified Firebase ID token, an allowed clinical role, and a
+valid App Check token. The request requires structured-output support,
+disallows data-collecting providers, and enforces a Zero Data Retention
+endpoint.
 
 Administrative imports and fixture generation deliberately do not exist in
 this client. Put those operations in separately authorized server-side tooling

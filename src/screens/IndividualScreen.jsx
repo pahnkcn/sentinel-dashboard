@@ -28,7 +28,7 @@ function FourColorTooltip({ active, payload }) {
   if (!active || !point) return null;
 
   return (
-    <div className="rounded-lg border bg-white p-3 text-xs shadow-xl">
+    <div className="max-w-[calc(100vw-2rem)] rounded-lg border bg-white p-3 text-xs shadow-xl">
       <p className="mb-2 border-b pb-1 font-bold">{point.date}</p>
       {createFourColorTooltipRows(point).map(row => (
         <p key={row.field} style={{ color: VIEWPOINT_COLORS[row.field] }}>
@@ -61,7 +61,7 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
 
   if (!individual) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center font-bold text-slate-400">
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center font-bold text-slate-400 sm:p-12">
         ยังไม่มีข้อมูล นรม. ที่ติดตามได้
       </div>
     );
@@ -71,13 +71,13 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
 
   return (
     <div className="space-y-6">
-      <section className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-        <h3 className="text-xl font-bold">
+      <section className="flex flex-col items-stretch justify-between gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:p-6">
+        <h3 className="text-lg font-bold sm:text-xl">
           ผลวิเคราะห์: <span className="text-blue-600">{student.name}</span>
         </h3>
         <select
           aria-label="เลือก นรม. ที่ต้องการติดตาม"
-          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 font-bold outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-bold outline-none focus:ring-2 focus:ring-blue-500 sm:w-auto sm:max-w-[50%] sm:py-2"
           value={activeStudentId}
           onChange={event => setSelectedStudentId(event.target.value)}
         >
@@ -90,30 +90,30 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
       </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <aside className="col-span-1 space-y-4 rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+        <aside className="col-span-1 space-y-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6">
           <h4 className="flex items-center border-b pb-3 font-bold text-blue-600">
             <User size={18} className="mr-2" /> ข้อมูลพื้นฐาน
           </h4>
           <dl className="space-y-3 text-sm">
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-3">
               <dt className="text-slate-500">เพศ:</dt>
-              <dd className="font-bold text-slate-800">{student.demographics?.gender || '-'}</dd>
+              <dd className="max-w-[60%] break-words text-right font-bold text-slate-800">{student.demographics?.gender || '-'}</dd>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-3">
               <dt className="text-slate-500">ห้องพัก:</dt>
-              <dd className="font-bold text-slate-800">{student.room}</dd>
+              <dd className="max-w-[60%] break-words text-right font-bold text-slate-800">{student.room}</dd>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-3">
               <dt className="text-slate-500">ป่วยกาย (Detail):</dt>
-              <dd className="font-bold text-slate-800">{student.demographics?.physicalIssueDetail || '-'}</dd>
+              <dd className="max-w-[60%] break-words text-right font-bold text-slate-800">{student.demographics?.physicalIssueDetail || '-'}</dd>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-3">
               <dt className="text-slate-500">สุขภาพจิต (Detail):</dt>
-              <dd className="font-bold text-slate-800">{student.demographics?.mentalIssueDetail || '-'}</dd>
+              <dd className="max-w-[60%] break-words text-right font-bold text-slate-800">{student.demographics?.mentalIssueDetail || '-'}</dd>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-3">
               <dt className="text-slate-500">ความรุนแรงจิตเวช:</dt>
-              <dd className={`font-bold ${student.demographics?.mentalSeverity === 3 ? 'text-rose-500' : 'text-slate-800'}`}>
+              <dd className={`max-w-[60%] break-words text-right font-bold ${student.demographics?.mentalSeverity === 3 ? 'text-rose-500' : 'text-slate-800'}`}>
                 {student.mentalSeverityLabel}
               </dd>
             </div>
@@ -151,17 +151,17 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
         </aside>
 
         <div className="col-span-1 space-y-6 xl:col-span-2">
-          <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+          <section className="min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6">
             <h4 className="mb-6 flex items-center font-bold text-slate-800">
               <Activity size={18} className="mr-2 text-blue-500" /> 4 Colors Trend (รายวัน)
             </h4>
             {loading.logs ? <Skeleton className="h-56" /> : (
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={individual.fourColorTrend}>
+              <div className="h-56 w-full min-w-0">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                  <LineChart data={individual.fourColorTrend} margin={{ top: 5, right: 8, left: -16, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="show" tick={{ fontSize: 10 }} />
-                    <YAxis domain={[1, 4]} ticks={[1, 2, 3, 4]} />
+                    <XAxis dataKey="show" tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={18} />
+                    <YAxis width={32} domain={[1, 4]} ticks={[1, 2, 3, 4]} />
                     <RechartsTooltip content={<FourColorTooltip />} />
                     <Line type="stepAfter" dataKey="self" name="Self" stroke="#3b82f6" strokeWidth={3} dot={false} />
                     <Line type="stepAfter" dataKey="buddy" name="Buddy" stroke="#10b981" strokeWidth={3} dot={false} />
@@ -174,17 +174,17 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
           </section>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+            <section className="min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6">
               <h4 className="mb-6 flex items-center font-bold text-slate-800">
                 <ShieldCheck size={18} className="mr-2 text-rose-500" /> DASS-21
               </h4>
               {loading.assessments ? <Skeleton className="h-56" /> : (
-                <div className="h-56">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={individual.assessments}>
+                <div className="h-56 w-full min-w-0">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <LineChart data={individual.assessments} margin={{ top: 5, right: 8, left: -16, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={0} tickFormatter={WeekTick} />
-                      <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} />
+                      <XAxis dataKey="week" tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={18} tickFormatter={WeekTick} />
+                      <YAxis width={32} domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} />
                       <RechartsTooltip />
                       <Line type="monotone" dataKey="dass_d" name="D" stroke="#3b82f6" strokeWidth={3} />
                       <Line type="monotone" dataKey="dass_a" name="A" stroke="#f59e0b" strokeWidth={3} />
@@ -195,18 +195,18 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
               )}
             </section>
 
-            <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+            <section className="min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6">
               <h4 className="mb-6 flex items-center font-bold text-slate-800">
                 <ShieldCheck size={18} className="mr-2 text-purple-500" /> CD-RISC & GRIT
               </h4>
               {loading.assessments ? <Skeleton className="h-56" /> : (
-                <div className="h-56">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={individual.resilienceTrend}>
+                <div className="h-56 w-full min-w-0">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <LineChart data={individual.resilienceTrend} margin={{ top: 5, right: -8, left: -16, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={0} tickFormatter={WeekTick} />
-                      <YAxis yAxisId="left" domain={[0, 40]} />
-                      <YAxis yAxisId="right" orientation="right" domain={[0, 32]} />
+                      <XAxis dataKey="week" tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={18} tickFormatter={WeekTick} />
+                      <YAxis width={36} yAxisId="left" domain={[0, 40]} />
+                      <YAxis width={36} yAxisId="right" orientation="right" domain={[0, 32]} />
                       <RechartsTooltip />
                       <Line yAxisId="left" type="monotone" dataKey="cd_risc" name="CD-RISC" stroke="#8b5cf6" strokeWidth={3} />
                       <Line yAxisId="right" type="monotone" dataKey="grit" name="GRIT" stroke="#10b981" strokeWidth={3} strokeDasharray="5 5" />

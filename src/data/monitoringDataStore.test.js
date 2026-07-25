@@ -158,6 +158,23 @@ test('reconnects without leaking records after a StrictMode-style remount', () =
   assert.equal(adapter.disconnectCount, 2);
 });
 
+test('retries a failed connection and clears previously verified records', () => {
+  const { adapter, store, unsubscribe } = connectStore();
+  adapter.publishDataset(dataset({
+    students: payload([{ id: 'sensitive' }]),
+  }), { verifiedAt: 1 });
+  adapter.fail('logs', { code: 'permission-denied' });
+
+  store.retry();
+
+  assert.equal(adapter.connectionCount, 1);
+  assert.equal(adapter.disconnectCount, 1);
+  assert.equal(store.getSnapshot().status, 'connecting');
+  assert.deepEqual(store.getSnapshot().students, []);
+  assert.equal(store.getSnapshot().lastUpdatedAt, null);
+  unsubscribe();
+});
+
 test('clears the old version while the next complete dataset is pending', () => {
   const { adapter, store, unsubscribe, notifications } = connectStore();
   adapter.publishDataset(dataset({

@@ -6,14 +6,14 @@ export function AccessGate({ authorization }) {
   const isUnauthorized = status === 'unauthorized';
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
-      <section className="w-full max-w-md rounded-3xl border border-white/10 bg-slate-900 p-8 shadow-2xl" aria-live="polite">
+    <main className="flex min-h-screen items-center justify-center bg-slate-950 p-4 text-white sm:p-6">
+      <section className="w-full max-w-md rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl sm:p-8" aria-live="polite">
         <div className="w-16 h-16 bg-blue-500 rounded-2xl mb-6 flex items-center justify-center shadow-lg shadow-blue-500/30">
           {isUnauthorized ? <ShieldAlert size={32} /> : <HeartPulse size={32} />}
         </div>
 
         <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-400">Sentinel</p>
-        <h1 className="mt-2 text-3xl font-black">
+        <h1 className="mt-2 text-2xl font-black sm:text-3xl">
           {isUnauthorized ? 'ไม่มีสิทธิ์เข้าถึง' : 'Staff sign-in required'}
         </h1>
         <p className="mt-4 text-sm leading-6 text-slate-300">

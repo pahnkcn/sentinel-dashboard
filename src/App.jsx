@@ -9,7 +9,7 @@ const Dashboard = lazy(() => import('./Dashboard.jsx'));
 
 function DashboardFallback() {
   return (
-    <main role="status" aria-label="กำลังเปิดแดชบอร์ด" className="min-h-screen bg-slate-50 p-6 md:p-12">
+    <main role="status" aria-label="กำลังเปิดแดชบอร์ด" className="min-h-screen bg-slate-50 p-3 sm:p-6 md:p-12">
       <div className="mx-auto max-w-7xl space-y-6">
         <Skeleton className="h-24" />
         <Skeleton className="h-72" />

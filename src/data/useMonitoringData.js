@@ -14,3 +14,7 @@ export function useMonitoringData() {
     monitoringDataStore.getSnapshot,
   );
 }
+
+export function retryMonitoringData() {
+  monitoringDataStore.retry();
+}

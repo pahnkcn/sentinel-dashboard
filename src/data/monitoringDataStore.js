@@ -239,5 +239,10 @@ export function createMonitoringDataStore(adapter) {
         if (listeners.size === 0) stop();
       };
     },
+    retry() {
+      if (listeners.size === 0) return;
+      stop();
+      start();
+    },
   };
 }

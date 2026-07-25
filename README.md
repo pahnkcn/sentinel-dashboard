@@ -34,13 +34,16 @@ npm run emulators
 In a second terminal:
 
 ```sh
+npm run emulators:seed
 npm run dev
 ```
 
 Use the Auth Emulator UI or separately controlled Admin SDK tooling connected
 to the emulator to create a verified test user with
-`sentinelRole: "clinician"` or `"admin"`. Populate emulator-only Firestore
-records separately; this client intentionally contains no fixture writer.
+`sentinelRole: "clinician"` or `"admin"`. The seed command writes a bounded,
+synthetic dataset through the loopback-only emulator REST API. It refuses
+non-`demo-*` projects and non-loopback hosts; it is not included in the browser
+client and cannot write to a remote Firebase project.
 
 Remote builds use `.env.example` as a template. Every placeholder must be
 replaced, `VITE_FIREBASE_USE_EMULATORS` must be `false`, and an App Check site
@@ -61,6 +64,7 @@ administrator provisions the required custom claim. See
 | Command | Purpose |
 | --- | --- |
 | `npm run emulators` | Start local Auth and Firestore emulators using the safe demo project |
+| `npm run emulators:seed` | Publish synthetic local data to the running Firestore emulator |
 | `npm test` | Unit tests for auth, hosting policy, decoding, data lifecycle, and analytics |
 | `npm run test:rules` | Firestore rules integration tests in the emulator |
 | `npm run lint` | ESLint checks |

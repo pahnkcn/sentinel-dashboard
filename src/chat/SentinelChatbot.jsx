@@ -31,6 +31,7 @@ import { askSentinelAssistant } from './chatApi.js';
 import { createChatContext } from './chatContext.js';
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL } from './chatModels.js';
 import { getChatConnectionPresentation } from './chatStatus.js';
+import { MODEL_LOGOS } from './modelLogos.js';
 
 const QUICK_QUESTIONS = [
   'สรุปภาพรวมและจุดที่ควรติดตามวันนี้',
@@ -578,9 +579,11 @@ export default function SentinelChatbot({
                 onClick={() => setModelMenuOpen(current => !current)}
                 className="group flex w-full min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white p-2.5 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md hover:shadow-blue-100/70 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-[10px] font-black tracking-tight text-white shadow-md ${activeModel.tone}`}>
-                  {activeModel.mark}
-                </span>
+                <img
+                  src={MODEL_LOGOS[activeModel.logo]}
+                  alt=""
+                  className="h-10 w-10 flex-shrink-0 rounded-xl object-cover shadow-md ring-1 ring-slate-900/5"
+                />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.13em] text-slate-400">
                     <Cpu size={11} className="text-blue-500" />
@@ -647,9 +650,12 @@ export default function SentinelChatbot({
                             onChange={selectModel}
                             className="sr-only"
                           />
-                          <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-[9px] font-black tracking-tight text-white shadow-sm ${model.tone}`}>
-                            {model.mark}
-                          </span>
+                          <img
+                            src={MODEL_LOGOS[model.logo]}
+                            alt=""
+                            loading="lazy"
+                            className="h-9 w-9 flex-shrink-0 rounded-xl object-cover shadow-sm ring-1 ring-slate-900/5"
+                          />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[11px] font-black text-slate-800">
                               {model.label}

@@ -165,10 +165,11 @@ npx --yes firebase-tools@14.23.0 functions:secrets:set OPENROUTER_API_KEY \
 
 Set `OPENROUTER_MODEL` and `OPENROUTER_SITE_URL` as Functions string
 parameters when prompted during deployment, or in the reviewed project-specific
-Functions environment configuration. The default model is
-`google/gemini-3.6-flash`. Before each release, confirm the configured model
-still supports strict structured output and has an endpoint available under
-Zero Data Retention routing.
+Functions environment configuration. The fallback and initial UI model is
+`z-ai/glm-5.2`; interactive requests may select only the six model IDs in the
+server allowlist. Before each release, confirm every selectable model still
+supports strict structured output and has an endpoint available under Zero Data
+Retention routing.
 
 Deploy the Function and verify signed-out, wrong-role, missing-App-Check,
 invalid-body, rate-limit, provider-failure, and authorized success paths:

@@ -16,6 +16,9 @@ import {
 import {
   Bot,
   ChartNoAxesCombined,
+  Check,
+  ChevronDown,
+  Cpu,
   LockKeyhole,
   Send,
   ShieldCheck,
@@ -26,6 +29,7 @@ import {
 
 import { askSentinelAssistant } from './chatApi.js';
 import { createChatContext } from './chatContext.js';
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL } from './chatModels.js';
 import { getChatConnectionPresentation } from './chatStatus.js';
 
 const QUICK_QUESTIONS = [
@@ -271,10 +275,16 @@ export default function SentinelChatbot({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const [apiState, setApiState] = useState('unverified');
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const abortRef = useRef(null);
+  const modelMenuRef = useRef(null);
+  const modelButtonRef = useRef(null);
   const available = dataStatus === 'ready';
+  const activeModel = CHAT_MODELS.find(model => model.id === selectedModel)
+    ?? CHAT_MODELS[0];
   const connection = getChatConnectionPresentation({
     dataReady: available,
     pending,
@@ -282,6 +292,30 @@ export default function SentinelChatbot({
   });
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (!modelMenuOpen) return undefined;
+
+    function closeOnOutsidePointer(event) {
+      if (!modelMenuRef.current?.contains(event.target)) {
+        setModelMenuOpen(false);
+      }
+    }
+
+    function closeOnEscape(event) {
+      if (event.key === 'Escape') {
+        setModelMenuOpen(false);
+        modelButtonRef.current?.focus();
+      }
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [modelMenuOpen]);
 
   useEffect(() => {
     if (open) {
@@ -330,12 +364,14 @@ export default function SentinelChatbot({
     setMessages(current => [...current, userMessage]);
     setInput('');
     setError(null);
+    setModelMenuOpen(false);
     setPending(true);
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
       const response = await askSentinelAssistant({
+        model: selectedModel,
         messages: apiMessages,
         context,
         signal: controller.signal,
@@ -386,6 +422,12 @@ export default function SentinelChatbot({
     setError(null);
     setInput('');
     inputRef.current?.focus();
+  }
+
+  function selectModel(event) {
+    setSelectedModel(event.target.value);
+    setModelMenuOpen(false);
+    requestAnimationFrame(() => modelButtonRef.current?.focus());
   }
 
   return (
@@ -446,7 +488,10 @@ export default function SentinelChatbot({
               </button>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  setModelMenuOpen(false);
+                  setOpen(false);
+                }}
                 aria-label="ปิด Sentinel Analyst"
                 className="rounded-xl p-2 text-slate-400 transition hover:bg-white/10 hover:text-white"
               >
@@ -515,13 +560,121 @@ export default function SentinelChatbot({
             )}
           </div>
 
-          <footer className="min-w-0 overflow-hidden border-t border-slate-200 bg-white p-3">
+          <footer className="min-w-0 overflow-visible border-t border-slate-200 bg-white p-3">
             {!available && (
               <div className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800">
                 <ShieldCheck size={15} />
                 แชตจะเปิดใช้งานเมื่อข้อมูลทั้ง 3 stream ผ่านการยืนยันครบถ้วน
               </div>
             )}
+            <div ref={modelMenuRef} className="relative mb-2">
+              <button
+                ref={modelButtonRef}
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={modelMenuOpen}
+                aria-controls="sentinel-model-menu"
+                disabled={pending}
+                onClick={() => setModelMenuOpen(current => !current)}
+                className="group flex w-full min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white p-2.5 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md hover:shadow-blue-100/70 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-[10px] font-black tracking-tight text-white shadow-md ${activeModel.tone}`}>
+                  {activeModel.mark}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.13em] text-slate-400">
+                    <Cpu size={11} className="text-blue-500" />
+                    โมเดลที่ใช้ตอบ
+                  </span>
+                  <span className="mt-0.5 flex min-w-0 items-baseline gap-1.5">
+                    <span className="truncate text-xs font-black text-slate-800">
+                      {activeModel.label}
+                    </span>
+                    <span className="truncate text-[10px] font-medium text-slate-400">
+                      โดย {activeModel.provider}
+                    </span>
+                  </span>
+                </span>
+                <span className="flex flex-shrink-0 items-center gap-2">
+                  <span className="hidden rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[8px] font-black uppercase tracking-wider text-emerald-700 min-[390px]:inline-flex">
+                    OpenRouter
+                  </span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 transition group-hover:text-blue-600">
+                    <ChevronDown
+                      size={15}
+                      className={`transition-transform duration-200 ${modelMenuOpen ? 'rotate-180' : ''}`}
+                    />
+                  </span>
+                </span>
+              </button>
+
+              {modelMenuOpen && (
+                <div
+                  id="sentinel-model-menu"
+                  role="dialog"
+                  aria-label="เลือกโมเดล AI"
+                  className="chat-model-menu absolute bottom-[calc(100%+0.5rem)] left-0 right-0 z-30 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,.24)]"
+                >
+                  <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-slate-950 to-blue-950 px-3.5 py-3 text-white">
+                    <div>
+                      <p className="text-xs font-black">เลือกโมเดล AI</p>
+                      <p className="mt-0.5 text-[9px] text-slate-300">
+                        ใช้กับข้อความถัดไปผ่าน OpenRouter ZDR
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-2 py-1 text-[9px] font-bold text-blue-100 ring-1 ring-white/15">
+                      6 โมเดล
+                    </span>
+                  </div>
+                  <fieldset className="grid max-h-[46dvh] grid-cols-1 gap-2 overflow-y-auto p-2 [scrollbar-color:#cbd5e1_transparent] sm:max-h-80 sm:grid-cols-2">
+                    <legend className="sr-only">เลือกโมเดลสำหรับการสนทนา</legend>
+                    {CHAT_MODELS.map(model => {
+                      const selected = model.id === selectedModel;
+                      return (
+                        <label
+                          key={model.id}
+                          className={`group/model relative flex min-w-0 cursor-pointer items-center gap-2.5 rounded-xl border p-2.5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-blue-50/50 hover:shadow-md focus-within:ring-2 focus-within:ring-blue-400 ${
+                            selected
+                              ? model.selectedTone
+                              : 'border-slate-200 bg-white shadow-slate-100'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="sentinel-chat-model"
+                            value={model.id}
+                            checked={selected}
+                            onChange={selectModel}
+                            className="sr-only"
+                          />
+                          <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-[9px] font-black tracking-tight text-white shadow-sm ${model.tone}`}>
+                            {model.mark}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[11px] font-black text-slate-800">
+                              {model.label}
+                            </span>
+                            <span className="block truncate text-[9px] font-medium text-slate-500">
+                              {model.provider}
+                            </span>
+                            <span className="mt-0.5 block truncate font-mono text-[8px] text-slate-400">
+                              {model.id}
+                            </span>
+                          </span>
+                          <span className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full transition ${
+                            selected
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'border border-slate-200 bg-white text-transparent group-hover/model:text-slate-300'
+                          }`}>
+                            <Check size={12} strokeWidth={3} />
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </fieldset>
+                </div>
+              )}
+            </div>
             <form onSubmit={handleSubmit} className="flex min-w-0 items-end gap-2">
               <label htmlFor="sentinel-chat-input" className="sr-only">พิมพ์คำถามเกี่ยวกับข้อมูล</label>
               <textarea

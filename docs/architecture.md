@@ -22,7 +22,7 @@ flowchart LR
   Analytics --> Individual["Individual screen"]
   Analytics --> Context["Question-aware chat context"]
   Context --> Function["Authenticated chat Function"]
-  Function --> Model["One OpenRouter model / ZDR"]
+  Function --> Model["Allowlisted OpenRouter model / ZDR"]
   Model --> Function
   Function --> Chat["Validated text / table / chart"]
 ```
@@ -164,9 +164,10 @@ exploratory decision support, not clinical diagnosis.
 The browser never receives the OpenRouter key. It sends a Firebase ID token,
 App Check token, bounded conversation, and question-aware context to the
 same-origin `/api/chat` Function. The Function repeats verified-email and exact
-role authorization and applies a per-instance request limit. It calls one
-configured OpenRouter model with the relevant verified context, a strict JSON
-schema, and ZDR provider routing. The response is normalized to a fixed text,
+role authorization, checks the requested model against the six-model allowlist,
+and applies a per-instance request limit. It calls the selected OpenRouter model
+with the relevant verified context, a strict JSON schema, and ZDR provider
+routing. The response is normalized to a fixed text,
 highlight, table, and chart shape before React renders it. Chat history stays
 in component memory and is cleared on sign-out or page close.
 

@@ -1,3 +1,5 @@
+import { isSupportedOpenRouterModel } from './chatModels.js';
+
 const MAX_MESSAGE_COUNT = 12;
 const MAX_MESSAGE_LENGTH = 3_000;
 const MAX_CONTEXT_BYTES = 350_000;
@@ -173,6 +175,10 @@ export function validateChatRequest(body) {
   if (messages.at(-1)?.role !== 'user') {
     return { ok: false, code: 'last-message-must-be-user' };
   }
+  const model = boundedString(body.model, 120);
+  if (body.model !== undefined && !isSupportedOpenRouterModel(model)) {
+    return { ok: false, code: 'unsupported-model' };
+  }
   if (!isObject(body.context)) return { ok: false, code: 'invalid-context' };
 
   const contextJson = JSON.stringify(body.context);
@@ -183,6 +189,7 @@ export function validateChatRequest(body) {
   return {
     ok: true,
     value: {
+      model: model || null,
       messages,
       context: body.context,
       contextJson,

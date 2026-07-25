@@ -5,6 +5,7 @@ import { appCheck, auth } from '../config/firebase.js';
 const ERROR_MESSAGES = Object.freeze({
   'chat-not-configured': 'ยังไม่ได้ตั้งค่า OpenRouter API สำหรับระบบนี้',
   'chat-config-invalid': 'การตั้งค่า OpenRouter model ไม่ถูกต้อง',
+  'unsupported-model': 'ไม่สามารถใช้โมเดลที่เลือกได้ กรุณาเลือกโมเดลอื่นแล้วลองใหม่',
   'chat-invalid-answer': 'โมเดลส่งคำตอบไม่สมบูรณ์ กรุณาลองถามอีกครั้ง',
   'chat-timeout': 'การวิเคราะห์ใช้เวลานานเกินไป กรุณาลองถามให้แคบลง',
   'chat-busy': 'ระบบวิเคราะห์กำลังมีผู้ใช้งานมาก กรุณารอสักครู่แล้วลองใหม่',
@@ -25,7 +26,7 @@ function publicError(code) {
   return error;
 }
 
-export async function askSentinelAssistant({ messages, context, signal }) {
+export async function askSentinelAssistant({ messages, context, model, signal }) {
   const user = auth.currentUser;
   if (!user) throw publicError('missing-auth');
 
@@ -42,7 +43,7 @@ export async function askSentinelAssistant({ messages, context, signal }) {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ messages, context }),
+    body: JSON.stringify({ model, messages, context }),
     signal,
   });
   const body = await response.json().catch(() => null);

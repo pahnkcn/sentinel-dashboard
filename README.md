@@ -125,9 +125,10 @@ in [CONTEXT.md](CONTEXT.md).
 The floating assistant appears only after an authorized user opens the
 dashboard. It works from the same verified, fail-closed dataset as the three
 workflow screens. General questions receive aggregate context; student and room
-details are selected only when a question requires them. One configured
-OpenRouter model receives that question-aware context and returns a strict
-structured response for validated text, tables, and Recharts visualizations.
+details are selected only when a question requires them. The user can choose
+GLM 5.2, Qwen 3.7 Plus, MiMo V2.5, DeepSeek V4 Pro, MiniMax M3, or Kimi K2.7
+Code. The selected OpenRouter model receives that question-aware context and
+returns a strict structured response for validated text, tables, and Recharts visualizations.
 Exploratory predictions use a bounded linear trend and are always labeled as
 decision support rather than diagnosis.
 

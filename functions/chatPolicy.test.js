@@ -8,12 +8,24 @@ import {
 
 test('chat request accepts bounded user conversation and context', () => {
   const result = validateChatRequest({
+    model: 'qwen/qwen3.7-plus',
     messages: [{ role: 'user', content: 'สรุปภาพรวม' }],
     context: { source: { datasetVersion: 'v1' } },
   });
 
   assert.equal(result.ok, true);
+  assert.equal(result.value.model, 'qwen/qwen3.7-plus');
   assert.equal(result.value.messages.length, 1);
+});
+
+test('chat request rejects a model outside the server allowlist', () => {
+  const result = validateChatRequest({
+    model: 'openrouter/auto',
+    messages: [{ role: 'user', content: 'summary' }],
+    context: {},
+  });
+
+  assert.deepEqual(result, { ok: false, code: 'unsupported-model' });
 });
 
 test('chat request rejects a conversation that does not end with the user', () => {

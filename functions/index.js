@@ -12,10 +12,14 @@ import {
   parseAssistantPayload,
   validateChatRequest,
 } from './chatPolicy.js';
+import {
+  DEFAULT_OPENROUTER_MODEL,
+  isSupportedOpenRouterModel,
+} from './chatModels.js';
 
 const OPENROUTER_API_KEY = defineSecret('OPENROUTER_API_KEY');
 const OPENROUTER_MODEL = defineString('OPENROUTER_MODEL', {
-  default: 'google/gemini-3.6-flash',
+  default: DEFAULT_OPENROUTER_MODEL,
 });
 const OPENROUTER_SITE_URL = defineString('OPENROUTER_SITE_URL', {
   default: 'https://sentinel-dashboard.web.app',
@@ -108,8 +112,7 @@ function anonymousUserId(uid) {
 
 function modelSetting(value) {
   const model = typeof value === 'string' ? value.trim() : '';
-  const validSlug = /^[a-z0-9~][a-z0-9._~-]*\/[a-z0-9][a-z0-9._:-]*$/i.test(model);
-  if (!validSlug || model.startsWith('openrouter/fusion')) {
+  if (!isSupportedOpenRouterModel(model)) {
     const error = new Error('invalid-model-setting');
     error.publicCode = 'chat-config-invalid';
     throw error;
@@ -157,11 +160,12 @@ async function callOpenRouter({ apiKey, body, signal, stage }) {
 async function requestOpenRouter({
   apiKey,
   userId,
+  selectedModel,
   messages,
   contextJson,
   signal,
 }) {
-  const model = modelSetting(OPENROUTER_MODEL.value());
+  const model = modelSetting(selectedModel ?? OPENROUTER_MODEL.value());
   const completion = await callOpenRouter({
     apiKey,
     signal,
@@ -274,6 +278,7 @@ export const sentinelChat = onRequest({
     const result = await requestOpenRouter({
       apiKey,
       userId: anonymousUserId(identity.uid),
+      selectedModel: validated.value.model,
       messages: validated.value.messages,
       contextJson: validated.value.contextJson,
       signal: controller.signal,

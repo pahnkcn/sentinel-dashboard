@@ -47,9 +47,9 @@ policies before enabling the Function in a real environment.
 | Accidental local access to live data | No fallback config; Vite `command`/`isPreview`, not user-selectable mode names, force every actual dev server to localhost emulators |
 | OpenRouter key exposure | Secret Manager-bound Function secret; no `VITE_*` key and no direct browser request |
 | Unauthorized AI access | Function verifies ID token, verified email, exact clinical role, App Check, request method, body size, and request rate |
-| Excessive AI disclosure | Question-aware context defaults to aggregates; Fusion receives per-request subject aliases, no names/IDs, and no sensitive demographic/drawing free text |
+| Excessive AI disclosure | Question-aware context defaults to aggregates and includes identifiable detail only for relevant people/rooms |
 | Provider retention or training | Every request requires `data_collection: "deny"` and `zdr: true`; deployment policy must also keep OpenRouter input/output logging disabled |
-| Hallucinated or unsafe output | Fusion deliberation is treated as untrusted evidence; a separate strict-schema formatter checks it against verified context before server normalization |
+| Hallucinated or unsafe output | Fixed system policy, strict structured-output schema, server normalization, visible coverage/method notes, and no write/action tools |
 
 Unit tests cover claim classification, safe Auth error reporting, hosting
 headers, decoding, server-snapshot verification, subscription lifecycle, and
@@ -92,14 +92,9 @@ that cannot reconstruct individuals. See ADR 0005.
 ## Residual constraints
 
 - Sensitive records remain in memory while an authorized dashboard is open.
-- De-identified numeric records and room summaries leave the Firebase
-  environment for the Fusion panel; the formatter receives relevant original
-  context. ZDR and aliases reduce risk but do not remove the need for legal,
+- Relevant sensitive records leave the Firebase environment for one OpenRouter
+  model. ZDR reduces retention but does not remove the need for legal,
   organizational, and provider review.
-- Fusion exposes web-search and web-fetch tools to panel and judge calls. The
-  prompt forbids their use for this closed dataset, but that instruction is not
-  a security boundary; identity removal before Fusion is the compensating
-  control.
 - The in-memory request limiter is an abuse guard, not a globally exact quota;
   set OpenRouter key budgets and platform-level controls as the cost boundary.
 - Session persistence limits saved Auth state to the current tab, but it is not

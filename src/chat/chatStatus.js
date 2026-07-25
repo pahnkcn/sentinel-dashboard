@@ -6,13 +6,13 @@ const PRESENTATIONS = Object.freeze({
     dotClass: 'bg-amber-300',
   }),
   connecting: Object.freeze({
-    label: 'กำลังเชื่อมต่อ Fusion',
+    label: 'กำลังเชื่อมต่อ OpenRouter',
     launcher: 'กำลังเชื่อมต่อและวิเคราะห์ข้อมูล',
     badgeClass: 'bg-blue-400/15 text-blue-300',
     dotClass: 'bg-blue-300 animate-pulse',
   }),
   online: Object.freeze({
-    label: 'Fusion พร้อมใช้งาน',
+    label: 'OpenRouter พร้อมใช้งาน',
     launcher: 'ถามข้อมูล · สร้างกราฟ · คาดการณ์',
     badgeClass: 'bg-emerald-400/15 text-emerald-300',
     dotClass: 'bg-emerald-300',
@@ -30,8 +30,8 @@ const PRESENTATIONS = Object.freeze({
     dotClass: 'bg-rose-300',
   }),
   unavailable: Object.freeze({
-    label: 'เชื่อมต่อ Fusion ไม่ได้',
-    launcher: 'เชื่อมต่อ Fusion ไม่ได้ · แตะเพื่อลองอีกครั้ง',
+    label: 'เชื่อมต่อ OpenRouter ไม่ได้',
+    launcher: 'เชื่อมต่อ OpenRouter ไม่ได้ · แตะเพื่อลองอีกครั้ง',
     badgeClass: 'bg-rose-400/15 text-rose-300',
     dotClass: 'bg-rose-300',
   }),

@@ -2,7 +2,54 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 const DEFAULT_FIRESTORE_HOST = '127.0.0.1:8080';
-const DATASET_VERSION = 'local-demo-v1';
+const DATASET_VERSION = 'local-large-v2';
+const DEFAULT_STUDENT_COUNT = 250;
+const MAX_STUDENT_COUNT = 250;
+const COMMIT_BATCH_SIZE = 450;
+const TRAINING_WEEKS = 16;
+const ASSESSMENT_WEEKS = Object.freeze([0, 4, 8, 16]);
+const ROOMS = Object.freeze(
+  ['A', 'B', 'C', 'D', 'E'].flatMap(building => (
+    Array.from({ length: 5 }, (_, index) => `${building}-${index + 101}`)
+  )),
+);
+const REGIONS = Object.freeze(['เหนือ', 'กลาง', 'ตะวันออก', 'ตะวันออกเฉียงเหนือ', 'ใต้']);
+
+function assertStudentCount(studentCount) {
+  if (
+    !Number.isInteger(studentCount)
+    || studentCount < 1
+    || studentCount > MAX_STUDENT_COUNT
+  ) {
+    throw new RangeError(
+      `Student count must be an integer between 1 and ${MAX_STUDENT_COUNT}`,
+    );
+  }
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function createDatasetVersion(clock = Date.now) {
+  const now = clock();
+  if (!Number.isSafeInteger(now) || now < 0) {
+    throw new TypeError('Dataset clock must return a non-negative safe integer');
+  }
+  return `${DATASET_VERSION}-${now.toString(36)}`;
+}
+
+function chunkWrites(writes, batchSize = COMMIT_BATCH_SIZE) {
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 500) {
+    throw new RangeError('Firestore commit batch size must be between 1 and 500');
+  }
+
+  const batches = [];
+  for (let offset = 0; offset < writes.length; offset += batchSize) {
+    batches.push(writes.slice(offset, offset + batchSize));
+  }
+  return batches;
+}
 
 function assertLocalEmulatorTarget(projectId, host) {
   if (!/^demo-[a-z0-9-]+$/.test(projectId)) {
@@ -53,66 +100,105 @@ function documentWrite(projectId, path, data) {
   };
 }
 
-function createDemoDocuments() {
-  const students = [
-    { id: 'demo-001', name: 'Demo Student 01', room: 'A-101', baseline: 'Low', tag: 'stable' },
-    { id: 'demo-002', name: 'Demo Student 02', room: 'A-101', baseline: 'Moderate', tag: 'follow-up' },
-    { id: 'demo-003', name: 'Demo Student 03', room: 'A-102', baseline: 'Low', tag: 'stable' },
-    { id: 'demo-004', name: 'Demo Student 04', room: 'A-102', baseline: 'High', tag: 'priority' },
-    { id: 'demo-005', name: 'Demo Student 05', room: 'B-201', baseline: 'Moderate', tag: 'follow-up' },
-    { id: 'demo-006', name: 'Demo Student 06', room: 'B-201', baseline: 'Low', tag: 'stable' },
-  ].map((student, index) => ({
-    ...student,
-    demographics: {
-      age: 18 + (index % 3),
-      gender: index % 2 === 0 ? 'ชาย' : 'หญิง',
-      region: ['เหนือ', 'กลาง', 'ตะวันออก'][index % 3],
-      school: 'Demo School',
-      familyHistory: '',
-      financialBurden: index === 4 ? 'ติดตาม' : '',
-      physicalIssueDetail: '',
-      mentalIssueDetail: '',
-      mentalSeverity: index === 3 ? 3 : index === 1 || index === 4 ? 2 : 1,
-    },
-  }));
+function createDemoDocuments({ studentCount = DEFAULT_STUDENT_COUNT } = {}) {
+  assertStudentCount(studentCount);
 
-  const startDate = new Date('2026-05-04T00:00:00.000Z');
+  const students = Array.from({ length: studentCount }, (_, index) => {
+    const sequence = index + 1;
+    const identifier = String(sequence).padStart(4, '0');
+    const riskBand = (sequence * 37) % 100;
+    const baseline = riskBand < 58 ? 'Low' : riskBand < 86 ? 'Moderate' : 'High';
+    const tag = baseline === 'High'
+      ? 'priority'
+      : baseline === 'Moderate'
+        ? 'follow-up'
+        : 'stable';
+    const mentalSeverity = sequence % 23 === 0
+      ? 3
+      : baseline === 'High' || sequence % 7 === 0
+        ? 2
+        : 1;
+
+    return {
+      id: `demo-${identifier}`,
+      name: `Mock Student ${identifier}`,
+      room: ROOMS[index % ROOMS.length],
+      baseline,
+      tag,
+      demographics: {
+        age: 18 + (index % 6),
+        gender: index % 2 === 0 ? 'ชาย' : 'หญิง',
+        region: REGIONS[index % REGIONS.length],
+        school: `Demo School ${(index % 8) + 1}`,
+        familyHistory: sequence % 29 === 0 ? 'มีประวัติครอบครัว (ข้อมูลจำลอง)' : '',
+        financialBurden: sequence % 13 === 0 ? 'ติดตาม (ข้อมูลจำลอง)' : '',
+        physicalIssueDetail: sequence % 31 === 0 ? 'ติดตามอาการบาดเจ็บจำลอง' : '',
+        mentalIssueDetail: mentalSeverity === 3 ? 'ส่งต่อประเมินเพิ่มเติม (ข้อมูลจำลอง)' : '',
+        mentalSeverity,
+      },
+    };
+  });
+
+  const startDate = new Date('2026-04-06T00:00:00.000Z');
   const logs = [];
-  for (let week = 1; week <= 12; week += 1) {
+  for (let week = 1; week <= TRAINING_WEEKS; week += 1) {
     const date = new Date(startDate);
     date.setUTCDate(startDate.getUTCDate() + ((week - 1) * 7));
     const calendarDate = date.toISOString().slice(0, 10);
 
     for (const [index, student] of students.entries()) {
-      const concernOffset = student.id === 'demo-004' ? 2 : student.id === 'demo-002' ? 1 : 0;
-      const self = Math.min(4, 1 + ((week + index + concernOffset) % 3) + concernOffset);
+      const riskOffset = student.baseline === 'High'
+        ? 18
+        : student.baseline === 'Moderate'
+          ? 8
+          : 0;
+      const signal = ((index + 1) * 17 + week * 13 + riskOffset) % 100;
+      const self = signal < 50 ? 1 : signal < 72 ? 2 : signal < 90 ? 3 : 4;
+      const peerDelta = ((index + week) % 3) - 1;
+      const commandDelta = ((index * 2 + week) % 3) - 1;
       logs.push({
         id: `log-${student.id}-${calendarDate}`,
         studentId: student.id,
         date: calendarDate,
         week,
         self,
-        buddy: week % 2 === 0 ? Math.min(4, self + (index % 2)) : null,
-        command: week % 4 === 0 ? Math.min(4, self + (index % 2)) : null,
-        physicalInjury: student.id === 'demo-005' && week >= 10 ? 2 : 1,
+        buddy: week % 2 === 0 ? clamp(self + peerDelta, 1, 4) : null,
+        command: week % 4 === 0 ? clamp(self + commandDelta, 1, 4) : null,
+        physicalInjury: (index + week) % 97 === 0
+          ? 3
+          : (index * 3 + week) % 29 === 0
+            ? 2
+            : 1,
       });
     }
   }
 
   const assessments = [];
-  for (const week of [0, 4, 8]) {
+  for (const week of ASSESSMENT_WEEKS) {
     for (const [index, student] of students.entries()) {
-      const resilienceWeek = week === 0 || week === 8;
+      const resilienceWeek = week === 0 || week === 8 || week === 16;
+      const period = week / 4;
+      const baselineOffset = student.baseline === 'High'
+        ? 2
+        : student.baseline === 'Moderate'
+          ? 1
+          : 0;
       assessments.push({
         id: `assessment-${student.id}-${week}`,
         studentId: student.id,
         week,
-        dass_d: Math.min(5, 1 + ((week / 4 + index) % 3)),
-        dass_a: Math.min(5, 1 + ((week / 4 + index + 1) % 3)),
-        dass_s: Math.min(5, 1 + ((week / 4 + index + 2) % 3)),
-        cd_risc: resilienceWeek ? 24 + index : null,
-        grit: resilienceWeek ? 20 + index : null,
-        drawing_note: '',
+        dass_d: clamp(1 + ((index + period) % 4) + baselineOffset, 1, 5),
+        dass_a: clamp(1 + ((index + period + 1) % 4) + baselineOffset, 1, 5),
+        dass_s: clamp(1 + ((index + period + 2) % 4) + baselineOffset, 1, 5),
+        cd_risc: resilienceWeek
+          ? clamp(19 + ((index * 7 + week) % 19) - baselineOffset * 2, 0, 40)
+          : null,
+        grit: resilienceWeek
+          ? clamp(15 + ((index * 5 + week) % 16) - baselineOffset, 0, 32)
+          : null,
+        drawing_note: week === 0 && (index + 1) % 41 === 0
+          ? 'บันทึกตัวอย่างสำหรับทดสอบการแสดงผลเท่านั้น'
+          : '',
       });
     }
   }
@@ -129,50 +215,73 @@ async function readDemoProjectId() {
   return projectId;
 }
 
+async function commitBatch({ host, projectId, writes, request = fetch }) {
+  let response;
+  try {
+    response = await request(
+      `http://${host}/v1/projects/${projectId}/databases/(default)/documents:commit`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer owner',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ writes }),
+      },
+    );
+  } catch {
+    throw new Error(
+      `Cannot reach the Firestore emulator at ${host}. `
+      + 'Run "npm.cmd run emulators" in another terminal and leave it running, '
+      + 'then run this seed command again.',
+    );
+  }
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Firestore emulator seed failed (${response.status}): ${detail}`);
+  }
+}
+
 async function seedEmulator() {
   const projectId = await readDemoProjectId();
   const host = process.env.FIRESTORE_EMULATOR_HOST || DEFAULT_FIRESTORE_HOST;
   assertLocalEmulatorTarget(projectId, host);
 
   const streams = createDemoDocuments();
+  const version = createDatasetVersion();
   const writes = [];
   for (const [stream, documents] of Object.entries(streams)) {
     for (const document of documents) {
       writes.push(documentWrite(
         projectId,
-        `monitoringDatasets/${DATASET_VERSION}/${stream}/${document.id}`,
+        `monitoringDatasets/${version}/${stream}/${document.id}`,
         document,
       ));
     }
   }
 
-  // The manifest is intentionally the final write so clients never select an
-  // incomplete dataset version.
-  writes.push(documentWrite(
-    projectId,
-    'monitoringManifests/current',
-    { version: DATASET_VERSION },
-  ));
-
-  const response = await fetch(
-    `http://${host}/v1/projects/${projectId}/databases/(default)/documents:commit`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer owner',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ writes }),
-    },
-  );
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Firestore emulator seed failed (${response.status}): ${detail}`);
+  const batches = chunkWrites(writes);
+  for (const [index, batch] of batches.entries()) {
+    await commitBatch({ host, projectId, writes: batch });
+    console.log(`Seed batch ${index + 1}/${batches.length}: ${batch.length} records`);
   }
 
+  // Publish a fresh immutable version only after every record is available.
+  await commitBatch({
+    host,
+    projectId,
+    writes: [
+      documentWrite(
+        projectId,
+        'monitoringManifests/current',
+        { version },
+      ),
+    ],
+  });
+
   console.log(
-    `Seeded ${writes.length - 1} synthetic records and manifest ${DATASET_VERSION} into ${projectId}.`,
+    `Seeded ${writes.length} synthetic records and manifest ${version} into ${projectId}.`,
   );
 }
 
@@ -186,7 +295,11 @@ if (import.meta.url === invokedPath) {
 
 export {
   assertLocalEmulatorTarget,
+  chunkWrites,
+  commitBatch,
+  createDatasetVersion,
   createDemoDocuments,
+  DEFAULT_STUDENT_COUNT,
   DATASET_VERSION,
   documentWrite,
   seedEmulator,

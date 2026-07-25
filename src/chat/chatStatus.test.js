@@ -18,7 +18,7 @@ test('chat reports configured and failed states from real request outcomes', () 
     dataReady: true,
     pending: false,
     apiState: 'online',
-  }).label, 'Fusion พร้อมใช้งาน');
+  }).label, 'OpenRouter พร้อมใช้งาน');
 
   assert.equal(getChatConnectionPresentation({
     dataReady: true,

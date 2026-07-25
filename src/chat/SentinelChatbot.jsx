@@ -53,7 +53,7 @@ function TypingIndicator() {
     <div
       role="status"
       aria-label="Sentinel Analyst กำลังวิเคราะห์"
-      className="chat-message-enter flex items-center gap-3 self-start rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm"
+      className="chat-message-enter flex min-w-0 max-w-full items-center gap-3 self-start rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm"
     >
       <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white">
         <Bot size={17} />
@@ -63,7 +63,7 @@ function TypingIndicator() {
         <span className="chat-typing-dot [animation-delay:160ms]" />
         <span className="chat-typing-dot [animation-delay:320ms]" />
       </span>
-      <span className="text-xs font-medium text-slate-500">Fusion กำลังวิเคราะห์หลายมุมมอง…</span>
+      <span className="text-xs font-medium text-slate-500">กำลังอ่านข้อมูลและวิเคราะห์…</span>
     </div>
   );
 }
@@ -99,8 +99,8 @@ function AssistantChart({ chart }) {
   const margin = { top: 8, right: 8, left: -12, bottom: 0 };
 
   return (
-    <figure className="mt-3 overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-b from-blue-50/80 to-white p-3">
-      <figcaption className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-800">
+    <figure className="mt-3 min-w-0 max-w-full overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-b from-blue-50/80 to-white p-3">
+      <figcaption className="mb-1 flex min-w-0 items-center gap-2 break-words text-sm font-bold text-slate-800">
         <ChartNoAxesCombined size={16} className="text-blue-600" />
         {chart.title}
       </figcaption>
@@ -165,16 +165,16 @@ function AssistantChart({ chart }) {
 
 function AssistantTable({ table }) {
   return (
-    <section className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+    <section className="mt-3 min-w-0 max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <h5 className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
         {table.title}
       </h5>
-      <div className="max-h-64 overflow-auto">
-        <table className="w-full min-w-[360px] text-left text-[11px]">
+      <div className="max-h-64 overflow-x-hidden overflow-y-auto">
+        <table className="w-full table-fixed text-left text-[11px]">
           <thead className="sticky top-0 bg-slate-100 text-slate-600">
             <tr>
               {table.columns.map((column, index) => (
-                <th key={`${column}-${index}`} className="whitespace-nowrap px-3 py-2 font-bold">
+                <th key={`${column}-${index}`} className="break-words px-2 py-2 font-bold [overflow-wrap:anywhere]">
                   {column}
                 </th>
               ))}
@@ -184,7 +184,7 @@ function AssistantTable({ table }) {
             {table.rows.map((row, rowIndex) => (
               <tr key={rowIndex} className="border-t border-slate-100">
                 {row.map((cell, cellIndex) => (
-                  <td key={cellIndex} className="px-3 py-2 align-top text-slate-700">
+                  <td key={cellIndex} className="break-words px-2 py-2 align-top text-slate-700 [overflow-wrap:anywhere]">
                     {cell}
                   </td>
                 ))}
@@ -201,13 +201,13 @@ function AssistantMessage({ message, disabled, onFollowUp }) {
   const { payload } = message;
 
   return (
-    <article className="chat-message-enter self-start">
-      <div className="flex items-start gap-2">
+    <article className="chat-message-enter w-full min-w-0 self-start">
+      <div className="flex min-w-0 items-start gap-2">
         <span className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-200">
           <Bot size={17} />
         </span>
-        <div className="min-w-0 max-w-[calc(100%-2.5rem)] rounded-2xl rounded-bl-md border border-slate-200 bg-white p-3.5 text-sm text-slate-700 shadow-sm">
-          <p className="whitespace-pre-wrap leading-6">{payload.answer}</p>
+        <div className="min-w-0 flex-1 overflow-hidden break-words rounded-2xl rounded-bl-md border border-slate-200 bg-white p-3.5 text-sm text-slate-700 shadow-sm [overflow-wrap:anywhere]">
+          <p className="whitespace-pre-wrap break-words leading-6 [overflow-wrap:anywhere]">{payload.answer}</p>
 
           {payload.highlights.length > 0 && (
             <ul className="mt-3 space-y-1.5 border-l-2 border-blue-200 pl-3 text-xs leading-5">
@@ -227,25 +227,25 @@ function AssistantMessage({ message, disabled, onFollowUp }) {
             </div>
           )}
 
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2.5 text-[10px] text-slate-400">
+          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 border-t border-slate-100 pt-2.5 text-[10px] text-slate-400">
             <span className="rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-600">
               {CONFIDENCE_LABELS[payload.confidence]}
             </span>
-            <span>{message.model}</span>
-            {message.totalTokens && <span>· {message.totalTokens.toLocaleString('th-TH')} tokens</span>}
+            <span className="min-w-0 break-all">{message.model}</span>
+            {message.totalTokens && <span className="break-words">· {message.totalTokens.toLocaleString('th-TH')} tokens</span>}
           </div>
         </div>
       </div>
 
       {payload.followUps.length > 0 && (
-        <div className="ml-10 mt-2 flex flex-wrap gap-1.5">
+        <div className="ml-10 mt-2 flex min-w-0 flex-wrap gap-1.5">
           {payload.followUps.map(followUp => (
             <button
               key={followUp}
               type="button"
               disabled={disabled}
               onClick={() => onFollowUp(followUp)}
-              className="rounded-full border border-blue-200 bg-white px-3 py-1.5 text-left text-[11px] font-semibold text-blue-700 transition hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="max-w-full break-words rounded-full border border-blue-200 bg-white px-3 py-1.5 text-left text-[11px] font-semibold text-blue-700 transition hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {followUp}
             </button>
@@ -411,7 +411,7 @@ export default function SentinelChatbot({
       {open && (
         <aside
           aria-label="Sentinel Analyst"
-          className="chat-panel fixed inset-3 z-50 flex flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-50 shadow-[0_28px_90px_rgba(15,23,42,.28)] sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[min(720px,calc(100dvh-2.5rem))] sm:w-[440px]"
+          className="chat-panel fixed inset-2 z-50 flex min-w-0 max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-50 shadow-[0_28px_90px_rgba(15,23,42,.28)] sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[min(780px,calc(100dvh-2.5rem))] sm:w-[min(600px,calc(100vw-2.5rem))]"
         >
           <header className="relative overflow-hidden bg-slate-950 px-4 pb-4 pt-4 text-white">
             <div className="chat-header-glow absolute -right-16 -top-20 h-48 w-48 rounded-full bg-blue-500/30 blur-3xl" />
@@ -420,7 +420,7 @@ export default function SentinelChatbot({
                 <Bot size={22} />
               </span>
               <div className="min-w-0 flex-1">
-                <h3 className="flex items-center gap-2 text-sm font-black">
+                <h3 className="flex flex-wrap items-center gap-2 text-sm font-black">
                   Sentinel Analyst
                   <span
                     aria-live="polite"
@@ -431,7 +431,7 @@ export default function SentinelChatbot({
                   </span>
                 </h3>
                 <p className="mt-0.5 truncate text-[10px] text-slate-300">
-                  วิเคราะห์หลายโมเดลด้วย Fusion · ปกปิดตัวตน · ZDR
+                  วิเคราะห์จากข้อมูลที่ยืนยันแล้ว · OpenRouter ZDR
                 </p>
               </div>
               <button
@@ -457,16 +457,16 @@ export default function SentinelChatbot({
 
           <div
             ref={scrollRef}
-            className="flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain p-4 [scrollbar-color:#cbd5e1_transparent]"
+            className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-contain p-4 [scrollbar-color:#cbd5e1_transparent]"
           >
-            <section className="chat-message-enter rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-4 shadow-sm">
+            <section className="chat-message-enter w-full min-w-0 rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
                   <Sparkles size={17} />
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h4 className="text-sm font-black text-slate-800">พร้อมช่วยอ่านข้อมูลให้ละเอียดขึ้น</h4>
-                  <p className="mt-1 text-xs leading-5 text-slate-600">
+                  <p className="mt-1 break-words text-xs leading-5 text-slate-600">
                     ถามภาพรวม รายห้อง รายบุคคล เปรียบเทียบช่วงเวลา ขอรายชื่อ
                     หรือให้แสดงคำตอบเป็นกราฟและตารางได้
                   </p>
@@ -492,7 +492,7 @@ export default function SentinelChatbot({
             {messages.map(message => message.role === 'user' ? (
               <div
                 key={message.id}
-                className="chat-message-enter max-w-[84%] self-end rounded-2xl rounded-br-md bg-blue-600 px-4 py-3 text-sm leading-6 text-white shadow-md shadow-blue-200"
+                className="chat-message-enter min-w-0 max-w-[84%] self-end break-words rounded-2xl rounded-br-md bg-blue-600 px-4 py-3 text-sm leading-6 text-white shadow-md shadow-blue-200 [overflow-wrap:anywhere]"
               >
                 {message.content}
               </div>
@@ -515,14 +515,14 @@ export default function SentinelChatbot({
             )}
           </div>
 
-          <footer className="border-t border-slate-200 bg-white p-3">
+          <footer className="min-w-0 overflow-hidden border-t border-slate-200 bg-white p-3">
             {!available && (
               <div className="mb-2 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800">
                 <ShieldCheck size={15} />
                 แชตจะเปิดใช้งานเมื่อข้อมูลทั้ง 3 stream ผ่านการยืนยันครบถ้วน
               </div>
             )}
-            <form onSubmit={handleSubmit} className="flex items-end gap-2">
+            <form onSubmit={handleSubmit} className="flex min-w-0 items-end gap-2">
               <label htmlFor="sentinel-chat-input" className="sr-only">พิมพ์คำถามเกี่ยวกับข้อมูล</label>
               <textarea
                 ref={inputRef}
@@ -534,7 +534,7 @@ export default function SentinelChatbot({
                 onChange={event => setInput(event.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={pending ? 'รอคำตอบก่อนส่งข้อความถัดไป…' : 'ถามเกี่ยวกับข้อมูลในแดชบอร์ด…'}
-                className="max-h-28 min-h-11 flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-5 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="max-h-28 min-h-11 min-w-0 flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-5 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
               />
               <button
                 type="submit"
@@ -545,7 +545,7 @@ export default function SentinelChatbot({
                 <Send size={18} />
               </button>
             </form>
-            <div className="mt-2 flex items-center justify-between gap-2 px-1 text-[9px] text-slate-400">
+            <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 text-[9px] text-slate-400">
               <span className="flex items-center gap-1">
                 <LockKeyhole size={10} />
                 ไม่บันทึกประวัติในเครื่อง · ส่งเฉพาะบริบทที่เกี่ยวข้อง

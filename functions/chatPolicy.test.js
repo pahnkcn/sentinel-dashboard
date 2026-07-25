@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  createFusionRequestView,
   parseAssistantPayload,
   validateChatRequest,
 } from './chatPolicy.js';
@@ -52,55 +51,36 @@ test('assistant payload is normalized before it reaches the browser', () => {
   assert.deepEqual(payload.chart.points[1].values, [2]);
 });
 
-test('fusion view replaces identities and removes sensitive free text', () => {
-  const result = createFusionRequestView({
-    messages: [{ role: 'user', content: 'วิเคราะห์ Alpha Student รหัส s-001 และ baseline note' }],
-    context: {
-      source: { datasetVersion: 'v1' },
-      relevantStudents: [{
-        id: 's-001',
-        name: 'Alpha Student',
-        room: 'A-101',
-        mentalSeverity: 2,
-        latestObservation: { self: 4 },
-      }],
-      detailedStudents: [{
-        id: 's-001',
-        name: 'Alpha Student',
-        room: 'A-101',
-        mentalSeverity: 2,
-        demographics: { school: 'Private School' },
-        drawingNote: 'baseline note',
-        fourColorTrend: [{ date: '2026-01-01', self: 4, buddy: 3, command: 3 }],
-        assessments: [{
-          id: 'a1',
-          studentId: 's-001',
-          week: 0,
-          dass_d: 2,
-          dass_a: 3,
-          dass_s: 4,
-          drawing_note: 'baseline note',
-        }],
-      }],
-      retrieval: {
-        includedRelevantStudentCount: 1,
-        includedDetailedStudentCount: 1,
-        detailedStudentLimit: 12,
-      },
-      constraints: [],
-    },
-  });
-  const serialized = JSON.stringify(result.context);
-
-  assert.doesNotMatch(serialized, /Alpha Student|s-001|Private School|baseline note/);
-  assert.match(serialized, /subject_001/);
-  assert.equal(
-    result.messages[0].content,
-    'วิเคราะห์ subject_001 รหัส subject_001 และ [redacted_detail]',
+test('assistant payload rejects a placeholder-only answer', () => {
+  assert.throws(
+    () => parseAssistantPayload(JSON.stringify({
+      answer: '...',
+      highlights: ['…'],
+      confidence: 'high',
+      dataCoverage: '...',
+      table: null,
+      chart: null,
+      methodNote: '...',
+      followUps: ['...'],
+    })),
+    /empty-assistant-answer/,
   );
-  assert.deepEqual(result.aliases, [{
-    id: 's-001',
-    name: 'Alpha Student',
-    alias: 'subject_001',
-  }]);
+});
+
+test('assistant payload removes placeholders from optional text fields', () => {
+  const payload = parseAssistantPayload(JSON.stringify({
+    answer: 'ข้อมูลยังไม่พอสำหรับสรุปแนวโน้ม กรุณาตรวจสอบช่วงวันที่ของข้อมูล',
+    highlights: ['...', 'มีข้อมูลยืนยันถึงสัปดาห์ที่ 8'],
+    confidence: 'low',
+    dataCoverage: '…',
+    table: null,
+    chart: null,
+    methodNote: '-',
+    followUps: ['TBD', 'ตรวจสอบข้อมูลรายห้องหรือไม่'],
+  }));
+
+  assert.deepEqual(payload.highlights, ['มีข้อมูลยืนยันถึงสัปดาห์ที่ 8']);
+  assert.equal(payload.dataCoverage, '');
+  assert.equal(payload.methodNote, null);
+  assert.deepEqual(payload.followUps, ['ตรวจสอบข้อมูลรายห้องหรือไม่']);
 });

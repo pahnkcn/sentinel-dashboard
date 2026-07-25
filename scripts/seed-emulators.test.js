@@ -3,7 +3,11 @@ import test from 'node:test';
 
 import {
   assertLocalEmulatorTarget,
+  chunkWrites,
+  commitBatch,
+  createDatasetVersion,
   createDemoDocuments,
+  DEFAULT_STUDENT_COUNT,
   documentWrite,
   toFirestoreValue,
 } from './seed-emulators.mjs';
@@ -39,6 +43,46 @@ test('creates only records accepted by the production decoders', () => {
       assert.equal(decoded.ok, true, `${stream}/${document.id}: ${JSON.stringify(decoded.issues)}`);
     }
   }
+});
+
+test('creates a large complete development dataset at the dashboard limits', () => {
+  const streams = createDemoDocuments();
+
+  assert.equal(streams.students.length, DEFAULT_STUDENT_COUNT);
+  assert.equal(streams.logs.length, DEFAULT_STUDENT_COUNT * 16);
+  assert.equal(streams.assessments.length, DEFAULT_STUDENT_COUNT * 4);
+  assert.equal(
+    streams.students.length + streams.logs.length + streams.assessments.length,
+    5_250,
+  );
+  assert.equal(new Set(streams.students.map(student => student.room)).size, 25);
+  assert.deepEqual(
+    [...new Set(streams.assessments.map(assessment => assessment.week))],
+    [0, 4, 8, 16],
+  );
+});
+
+test('uses a fresh safe dataset version and bounded commit batches', () => {
+  assert.equal(createDatasetVersion(() => 1_000), 'local-large-v2-rs');
+
+  const writes = Array.from({ length: 1_001 }, (_, index) => index);
+  const batches = chunkWrites(writes, 450);
+  assert.deepEqual(batches.map(batch => batch.length), [450, 450, 101]);
+  assert.throws(() => chunkWrites(writes, 501), /between 1 and 500/);
+});
+
+test('explains how to recover when the Firestore emulator is offline', async () => {
+  await assert.rejects(
+    () => commitBatch({
+      host: '127.0.0.1:8080',
+      projectId: 'demo-project',
+      writes: [],
+      request: async () => {
+        throw new TypeError('fetch failed');
+      },
+    }),
+    /Run "npm\.cmd run emulators" in another terminal and leave it running/,
+  );
 });
 
 test('encodes nested fixture values for Firestore REST commits', () => {

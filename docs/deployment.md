@@ -163,14 +163,12 @@ npx --yes firebase-tools@14.23.0 functions:secrets:set OPENROUTER_API_KEY \
   --project YOUR_PROJECT_ID
 ```
 
-Set `OPENROUTER_FUSION_MODEL`, `OPENROUTER_FUSION_PRESET`,
-`OPENROUTER_FORMATTER_MODEL`, and `OPENROUTER_SITE_URL` as Functions string
+Set `OPENROUTER_MODEL` and `OPENROUTER_SITE_URL` as Functions string
 parameters when prompted during deployment, or in the reviewed project-specific
-Functions environment configuration. Defaults are `openrouter/fusion`,
-`general-fast`, and `google/gemini-3.6-flash`. Before each release, confirm the
-Fusion route is available and the formatter still supports strict structured
-output. Every selected endpoint must remain available under Zero Data
-Retention routing.
+Functions environment configuration. The default model is
+`google/gemini-3.6-flash`. Before each release, confirm the configured model
+still supports strict structured output and has an endpoint available under
+Zero Data Retention routing.
 
 Deploy the Function and verify signed-out, wrong-role, missing-App-Check,
 invalid-body, rate-limit, provider-failure, and authorized success paths:
@@ -234,9 +232,8 @@ Verify all of the following:
   relevant detail, and future-dated records remain withheld;
 - text, table, graph, prediction, provider error, and clear-conversation flows
   behave as reviewed;
-- Fusion is invoked for every successful question, its context contains
-  `subject_*` aliases rather than names/IDs or sensitive free text, and the
-  formatter still returns the strict UI schema;
+- each successful question produces one OpenRouter generation and returns the
+  strict UI schema;
 - sign-out returns to the access gate and disconnects listeners;
 - response headers include CSP, HSTS, `nosniff`, frame denial, referrer policy,
   permissions policy, COOP, and CORP.

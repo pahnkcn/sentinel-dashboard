@@ -17,6 +17,7 @@ dist-ssr
 .env.*
 !.env.example
 !.env.development.example
+!functions/.env.local.example
 
 # Firebase local cache
 .firebase/

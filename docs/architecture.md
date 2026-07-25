@@ -22,10 +22,8 @@ flowchart LR
   Analytics --> Individual["Individual screen"]
   Analytics --> Context["Question-aware chat context"]
   Context --> Function["Authenticated chat Function"]
-  Function --> Redact["Per-request aliases / free-text removal"]
-  Redact --> Router["OpenRouter Fusion ZDR"]
-  Router --> Format["Structured-output formatter ZDR"]
-  Format --> Function
+  Function --> Model["One OpenRouter model / ZDR"]
+  Model --> Function
   Function --> Chat["Validated text / table / chart"]
 ```
 
@@ -166,17 +164,11 @@ exploratory decision support, not clinical diagnosis.
 The browser never receives the OpenRouter key. It sends a Firebase ID token,
 App Check token, bounded conversation, and question-aware context to the
 same-origin `/api/chat` Function. The Function repeats verified-email and exact
-role authorization and applies a per-instance request limit.
-
-Before Fusion, the Function replaces every included name and student ID with a
-per-request `subject_*` alias. Demographic free text and drawing notes are
-removed, while bounded numeric observations, assessments, room summaries, and
-predictions remain. Fusion is forced with a low-latency preset and produces an
-evidence memo. Because the Fusion alias is not itself a structured-output model,
-a separate ZDR formatter receives that memo plus the original authorized
-context and emits the strict response schema. The response is normalized to a
-fixed text, highlight, table, and chart shape before React renders it. Chat
-history stays in component memory and is cleared on sign-out or page close.
+role authorization and applies a per-instance request limit. It calls one
+configured OpenRouter model with the relevant verified context, a strict JSON
+schema, and ZDR provider routing. The response is normalized to a fixed text,
+highlight, table, and chart shape before React renders it. Chat history stays
+in component memory and is cleared on sign-out or page close.
 
 ## Dependency rules
 

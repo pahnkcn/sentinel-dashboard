@@ -42,6 +42,12 @@ npm run emulators:seed
 npm run dev
 ```
 
+The local seed publishes a large synthetic load-test dataset with 250 students
+across 25 rooms, 16 weekly observations per student, and assessments at weeks
+0, 4, 8, and 16 (5,250 records total). Each run publishes a fresh immutable
+dataset version, and the manifest switches only after all records have been
+written. This seed remains restricted to the loopback-only `demo-*` emulator.
+
 Use the Auth Emulator UI or separately controlled Admin SDK tooling connected
 to the emulator to create a verified test user with
 `sentinelRole: "clinician"` or `"admin"`. The seed command writes a bounded,
@@ -117,20 +123,17 @@ in [CONTEXT.md](CONTEXT.md).
 The floating assistant appears only after an authorized user opens the
 dashboard. It works from the same verified, fail-closed dataset as the three
 workflow screens. General questions receive aggregate context; student and room
-details are selected only when a question requires them. The server replaces
-student names and IDs with per-request aliases and removes sensitive free text
-before OpenRouter Fusion performs multi-model deliberation. A separate
-structured-output formatter maps the evidence back to the authorized user's
-original context and produces validated text, tables, and Recharts
-visualizations. Exploratory predictions use a bounded linear trend and are
-always labeled as decision support rather than diagnosis.
+details are selected only when a question requires them. One configured
+OpenRouter model receives that question-aware context and returns a strict
+structured response for validated text, tables, and Recharts visualizations.
+Exploratory predictions use a bounded linear trend and are always labeled as
+decision support rather than diagnosis.
 
 OpenRouter is called only from the authenticated Cloud Function. Every remote
 request requires a verified Firebase ID token, an allowed clinical role, and a
-valid App Check token. Fusion is forced for each question with the
-`general-fast` preset; its memo is passed to a ZDR structured-output formatter.
-Both stages disallow data-collecting providers and enforce Zero Data Retention
-endpoints.
+valid App Check token. The request requires structured-output support,
+disallows data-collecting providers, and enforces a Zero Data Retention
+endpoint.
 
 Administrative imports and fixture generation deliberately do not exist in
 this client. Put those operations in separately authorized server-side tooling

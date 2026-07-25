@@ -4,6 +4,8 @@ import { appCheck, auth } from '../config/firebase.js';
 
 const ERROR_MESSAGES = Object.freeze({
   'chat-not-configured': 'ยังไม่ได้ตั้งค่า OpenRouter API สำหรับระบบนี้',
+  'chat-config-invalid': 'การตั้งค่า OpenRouter model ไม่ถูกต้อง',
+  'chat-invalid-answer': 'โมเดลส่งคำตอบไม่สมบูรณ์ กรุณาลองถามอีกครั้ง',
   'chat-timeout': 'การวิเคราะห์ใช้เวลานานเกินไป กรุณาลองถามให้แคบลง',
   'chat-busy': 'ระบบวิเคราะห์กำลังมีผู้ใช้งานมาก กรุณารอสักครู่แล้วลองใหม่',
   'chat-unavailable': 'ไม่สามารถรับคำตอบจากระบบวิเคราะห์ได้ในขณะนี้',

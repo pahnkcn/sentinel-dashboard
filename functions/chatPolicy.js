@@ -4,6 +4,7 @@ const MAX_CONTEXT_BYTES = 350_000;
 const MAX_ANSWER_LENGTH = 8_000;
 const ALLOWED_COLORS = new Set(['blue', 'emerald', 'amber', 'rose', 'violet', 'slate']);
 const ALLOWED_CHART_TYPES = new Set(['line', 'bar', 'area']);
+const PLACEHOLDER_TEXT = /^(?:[\s.…·•*_~—–-]+|tbd|todo|placeholder|null|undefined)$/iu;
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -11,6 +12,11 @@ function isObject(value) {
 
 function boundedString(value, maxLength) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function meaningfulString(value, maxLength) {
+  const text = boundedString(value, maxLength);
+  return text && !PLACEHOLDER_TEXT.test(text) ? text : '';
 }
 
 function boundedStrings(value, maxItems, maxLength) {
@@ -22,18 +28,30 @@ function boundedStrings(value, maxItems, maxLength) {
     : [];
 }
 
+function meaningfulStrings(value, maxItems, maxLength) {
+  return Array.isArray(value)
+    ? value
+        .map(item => meaningfulString(item, maxLength))
+        .filter(Boolean)
+        .slice(0, maxItems)
+    : [];
+}
+
 export const CHAT_RESPONSE_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
   properties: {
     answer: {
       type: 'string',
-      description: 'A concise Thai answer grounded only in the supplied dashboard context.',
+      description: 'A substantive Thai answer grounded only in the supplied dashboard context. Never use ellipses or placeholder text.',
     },
     highlights: {
       type: 'array',
       maxItems: 6,
-      items: { type: 'string' },
+      items: {
+        type: 'string',
+        description: 'A concrete supporting fact or finding in Thai, never placeholder text.',
+      },
     },
     confidence: {
       type: 'string',
@@ -41,7 +59,7 @@ export const CHAT_RESPONSE_SCHEMA = Object.freeze({
     },
     dataCoverage: {
       type: 'string',
-      description: 'Which verified dates, weeks, students, or rooms support the answer.',
+      description: 'A concrete Thai description of the verified dates, weeks, students, or rooms supporting the answer. Never use placeholder text.',
     },
     table: {
       type: ['object', 'null'],
@@ -115,12 +133,15 @@ export const CHAT_RESPONSE_SCHEMA = Object.freeze({
     },
     methodNote: {
       type: ['string', 'null'],
-      description: 'Calculation or prediction method and its important limitation.',
+      description: 'The calculation or prediction method and its important limitation in Thai, or null when not applicable. Never use placeholder text.',
     },
     followUps: {
       type: 'array',
       maxItems: 3,
-      items: { type: 'string' },
+      items: {
+        type: 'string',
+        description: 'A complete, actionable follow-up question in Thai, never placeholder text.',
+      },
     },
   },
   required: [
@@ -166,176 +187,6 @@ export function validateChatRequest(body) {
       context: body.context,
       contextJson,
     },
-  };
-}
-
-function uniqueSubjects(context) {
-  const profiles = [
-    ...(Array.isArray(context?.relevantStudents) ? context.relevantStudents : []),
-    ...(Array.isArray(context?.detailedStudents) ? context.detailedStudents : []),
-  ];
-  const byId = new Map();
-  for (const profile of profiles) {
-    if (
-      isObject(profile)
-      && typeof profile.id === 'string'
-      && typeof profile.name === 'string'
-      && !byId.has(profile.id)
-    ) {
-      byId.set(profile.id, { id: profile.id, name: profile.name });
-    }
-  }
-  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function replaceTerms(value, replacements) {
-  let output = String(value ?? '');
-  for (const [term, replacement] of replacements) {
-    if (term.length < 3) continue;
-    output = output.replace(new RegExp(escapeRegExp(term), 'giu'), replacement);
-  }
-  return output;
-}
-
-function sensitiveDetailTerms(context) {
-  const terms = [];
-  const fields = [
-    'region',
-    'school',
-    'familyHistory',
-    'financialBurden',
-    'physicalIssueDetail',
-    'mentalIssueDetail',
-  ];
-  for (const profile of context?.detailedStudents ?? []) {
-    for (const field of fields) {
-      const value = profile?.demographics?.[field];
-      if (typeof value === 'string' && value.trim().length >= 3) terms.push(value.trim());
-    }
-    if (typeof profile?.drawingNote === 'string' && profile.drawingNote.trim().length >= 3) {
-      terms.push(profile.drawingNote.trim());
-    }
-  }
-  return terms;
-}
-
-function numericAssessment(assessment) {
-  if (!isObject(assessment)) return null;
-  return {
-    week: Number.isFinite(assessment.week) ? assessment.week : null,
-    depression: Number.isFinite(assessment.dass_d) ? assessment.dass_d : null,
-    anxiety: Number.isFinite(assessment.dass_a) ? assessment.dass_a : null,
-    stress: Number.isFinite(assessment.dass_s) ? assessment.dass_s : null,
-    cdRisc: Number.isFinite(assessment.cd_risc) ? assessment.cd_risc : null,
-    grit: Number.isFinite(assessment.grit) ? assessment.grit : null,
-  };
-}
-
-function deidentifiedCompactProfile(profile, alias) {
-  return {
-    subject: alias,
-    room: boundedString(profile?.room, 100) || null,
-    mentalSeverity: Number.isFinite(profile?.mentalSeverity)
-      ? profile.mentalSeverity
-      : null,
-    latestObservation: isObject(profile?.latestObservation)
-      ? profile.latestObservation
-      : null,
-    latestAssessment: isObject(profile?.latestAssessment)
-      ? profile.latestAssessment
-      : null,
-    selfTrendDirection: Number.isFinite(profile?.selfTrendDirection)
-      ? profile.selfTrendDirection
-      : null,
-  };
-}
-
-function deidentifiedDetailedProfile(profile, alias) {
-  return {
-    ...deidentifiedCompactProfile(profile, alias),
-    fourColorTrend: Array.isArray(profile?.fourColorTrend)
-      ? profile.fourColorTrend.map(point => ({
-          date: boundedString(point?.date, 10),
-          self: Number.isFinite(point?.self) ? point.self : null,
-          buddy: Number.isFinite(point?.buddy) ? point.buddy : null,
-          command: Number.isFinite(point?.command) ? point.command : null,
-          buddyCarriedForward: point?.isBuddyCF === true,
-          commandCarriedForward: point?.isCommandCF === true,
-        }))
-      : [],
-    assessments: Array.isArray(profile?.assessments)
-      ? profile.assessments.map(numericAssessment).filter(Boolean)
-      : [],
-    latestResilience: isObject(profile?.latestResilience)
-      ? {
-          week: Number.isFinite(profile.latestResilience.week)
-            ? profile.latestResilience.week
-            : null,
-          cdRisc: Number.isFinite(profile.latestResilience.cd_risc)
-            ? profile.latestResilience.cd_risc
-            : null,
-          grit: Number.isFinite(profile.latestResilience.grit)
-            ? profile.latestResilience.grit
-            : null,
-        }
-      : null,
-    prediction: isObject(profile?.prediction) ? profile.prediction : null,
-  };
-}
-
-export function createFusionRequestView({ context, messages }) {
-  const subjects = uniqueSubjects(context);
-  const aliases = subjects.map((subject, index) => ({
-    ...subject,
-    alias: `subject_${String(index + 1).padStart(3, '0')}`,
-  }));
-  const aliasById = new Map(aliases.map(item => [item.id, item.alias]));
-  const replacements = aliases
-    .flatMap(item => [
-      [item.name, item.alias],
-      [item.id, item.alias],
-    ])
-    .concat(sensitiveDetailTerms(context).map(term => [term, '[redacted_detail]']))
-    .sort(([left], [right]) => right.length - left.length);
-
-  const fusionContext = {
-    source: context?.source ?? null,
-    glossary: context?.glossary ?? null,
-    overview: context?.overview ?? null,
-    roomSummaries: context?.roomSummaries ?? [],
-    relevantSubjects: (context?.relevantStudents ?? []).map(profile => (
-      deidentifiedCompactProfile(profile, aliasById.get(profile.id) ?? 'subject_unknown')
-    )),
-    detailedSubjects: (context?.detailedStudents ?? []).map(profile => (
-      deidentifiedDetailedProfile(profile, aliasById.get(profile.id) ?? 'subject_unknown')
-    )),
-    prediction: context?.prediction ?? null,
-    retrieval: {
-      includedRelevantStudentCount:
-        context?.retrieval?.includedRelevantStudentCount ?? 0,
-      includedDetailedStudentCount:
-        context?.retrieval?.includedDetailedStudentCount ?? 0,
-      detailedStudentLimit: context?.retrieval?.detailedStudentLimit ?? 0,
-    },
-    constraints: [
-      ...(Array.isArray(context?.constraints) ? context.constraints : []),
-      'Subject aliases are pseudonyms. Do not infer or search for real identities.',
-      'External web search is not needed and must not be used for this closed-dataset task.',
-    ],
-  };
-
-  return {
-    aliases,
-    context: fusionContext,
-    contextJson: JSON.stringify(fusionContext),
-    messages: messages.map(message => ({
-      role: message.role,
-      content: replaceTerms(message.content, replacements),
-    })),
   };
 }
 
@@ -419,19 +270,19 @@ export function parseAssistantPayload(content) {
   }
   if (!isObject(payload)) throw new Error('invalid-structured-response');
 
-  const answer = boundedString(payload.answer, MAX_ANSWER_LENGTH);
+  const answer = meaningfulString(payload.answer, MAX_ANSWER_LENGTH);
   if (!answer) throw new Error('empty-assistant-answer');
 
   return {
     answer,
-    highlights: boundedStrings(payload.highlights, 6, 500),
+    highlights: meaningfulStrings(payload.highlights, 6, 500),
     confidence: ['high', 'medium', 'low'].includes(payload.confidence)
       ? payload.confidence
       : 'low',
-    dataCoverage: boundedString(payload.dataCoverage, 500),
+    dataCoverage: meaningfulString(payload.dataCoverage, 500),
     table: normalizeTable(payload.table),
     chart: normalizeChart(payload.chart),
-    methodNote: boundedString(payload.methodNote, 1_000) || null,
-    followUps: boundedStrings(payload.followUps, 3, 240),
+    methodNote: meaningfulString(payload.methodNote, 1_000) || null,
+    followUps: meaningfulStrings(payload.followUps, 3, 240),
   };
 }

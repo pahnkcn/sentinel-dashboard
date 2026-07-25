@@ -31,6 +31,30 @@ function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+function getLocalCalendarDate(clock = Date.now) {
+  const now = new Date(clock());
+  if (Number.isNaN(now.getTime())) {
+    throw new TypeError('Fixture clock must return a valid date');
+  }
+
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function parseCalendarDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new TypeError('Fixture end date must be a valid YYYY-MM-DD calendar date');
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    throw new TypeError('Fixture end date must be a valid YYYY-MM-DD calendar date');
+  }
+  return date;
+}
+
 function createDatasetVersion(clock = Date.now) {
   const now = clock();
   if (!Number.isSafeInteger(now) || now < 0) {
@@ -100,8 +124,12 @@ function documentWrite(projectId, path, data) {
   };
 }
 
-function createDemoDocuments({ studentCount = DEFAULT_STUDENT_COUNT } = {}) {
+function createDemoDocuments({
+  studentCount = DEFAULT_STUDENT_COUNT,
+  endDate = getLocalCalendarDate(),
+} = {}) {
   assertStudentCount(studentCount);
+  const trainingEndDate = parseCalendarDate(endDate);
 
   const students = Array.from({ length: studentCount }, (_, index) => {
     const sequence = index + 1;
@@ -139,7 +167,8 @@ function createDemoDocuments({ studentCount = DEFAULT_STUDENT_COUNT } = {}) {
     };
   });
 
-  const startDate = new Date('2026-04-06T00:00:00.000Z');
+  const startDate = new Date(trainingEndDate);
+  startDate.setUTCDate(trainingEndDate.getUTCDate() - ((TRAINING_WEEKS - 1) * 7));
   const logs = [];
   for (let week = 1; week <= TRAINING_WEEKS; week += 1) {
     const date = new Date(startDate);
@@ -302,6 +331,7 @@ export {
   DEFAULT_STUDENT_COUNT,
   DATASET_VERSION,
   documentWrite,
+  getLocalCalendarDate,
   seedEmulator,
   toFirestoreValue,
 };

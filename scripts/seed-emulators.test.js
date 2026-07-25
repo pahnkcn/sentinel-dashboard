@@ -9,6 +9,7 @@ import {
   createDemoDocuments,
   DEFAULT_STUDENT_COUNT,
   documentWrite,
+  getLocalCalendarDate,
   toFirestoreValue,
 } from './seed-emulators.mjs';
 import { decodeAssessment, decodeLog, decodeStudent } from '../src/domain/records.js';
@@ -46,7 +47,7 @@ test('creates only records accepted by the production decoders', () => {
 });
 
 test('creates a large complete development dataset at the dashboard limits', () => {
-  const streams = createDemoDocuments();
+  const streams = createDemoDocuments({ endDate: '2026-07-26' });
 
   assert.equal(streams.students.length, DEFAULT_STUDENT_COUNT);
   assert.equal(streams.logs.length, DEFAULT_STUDENT_COUNT * 16);
@@ -59,6 +60,21 @@ test('creates a large complete development dataset at the dashboard limits', () 
   assert.deepEqual(
     [...new Set(streams.assessments.map(assessment => assessment.week))],
     [0, 4, 8, 16],
+  );
+  assert.equal(streams.logs[0].date, '2026-04-12');
+  assert.equal(streams.logs.at(-1).date, '2026-07-26');
+  assert.equal(
+    streams.logs.filter(log => log.date === '2026-07-26').length,
+    DEFAULT_STUDENT_COUNT,
+  );
+});
+
+test('uses the local current date and rejects invalid fixture end dates', () => {
+  const localMidnight = new Date(2026, 6, 26).getTime();
+  assert.equal(getLocalCalendarDate(() => localMidnight), '2026-07-26');
+  assert.throws(
+    () => createDemoDocuments({ studentCount: 1, endDate: '2026-02-30' }),
+    /valid YYYY-MM-DD calendar date/,
   );
 });
 

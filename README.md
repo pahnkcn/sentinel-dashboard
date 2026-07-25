@@ -44,9 +44,11 @@ npm run dev
 
 The local seed publishes a large synthetic load-test dataset with 250 students
 across 25 rooms, 16 weekly observations per student, and assessments at weeks
-0, 4, 8, and 16 (5,250 records total). Each run publishes a fresh immutable
-dataset version, and the manifest switches only after all records have been
-written. This seed remains restricted to the loopback-only `demo-*` emulator.
+0, 4, 8, and 16 (5,250 records total). The 16-week observation window ends on
+the local date when the seed command runs, so mock data stays current. Each run
+publishes a fresh immutable dataset version, and the manifest switches only
+after all records have been written. This seed remains restricted to the
+loopback-only `demo-*` emulator.
 
 Use the Auth Emulator UI or separately controlled Admin SDK tooling connected
 to the emulator to create a verified test user with

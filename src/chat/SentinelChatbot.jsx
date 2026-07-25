@@ -26,6 +26,7 @@ import {
 
 import { askSentinelAssistant } from './chatApi.js';
 import { createChatContext } from './chatContext.js';
+import { getChatConnectionPresentation } from './chatStatus.js';
 
 const QUICK_QUESTIONS = [
   'สรุปภาพรวมและจุดที่ควรติดตามวันนี้',
@@ -269,10 +270,16 @@ export default function SentinelChatbot({
   const [messages, setMessages] = useState([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
+  const [apiState, setApiState] = useState('unverified');
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const abortRef = useRef(null);
   const available = dataStatus === 'ready';
+  const connection = getChatConnectionPresentation({
+    dataReady: available,
+    pending,
+    apiState,
+  });
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -343,8 +350,12 @@ export default function SentinelChatbot({
           totalTokens: response.usage?.totalTokens ?? null,
         },
       ]);
+      setApiState('online');
     } catch (requestError) {
       if (requestError?.name !== 'AbortError') {
+        setApiState(
+          requestError?.code === 'chat-not-configured' ? 'not-configured' : 'error',
+        );
         setError(requestError?.message || 'ไม่สามารถวิเคราะห์ข้อมูลได้ กรุณาลองใหม่');
       }
     } finally {
@@ -392,9 +403,7 @@ export default function SentinelChatbot({
           </span>
           <span className="text-left">
             <span className="block text-xs font-black">Sentinel Analyst</span>
-            <span className="block text-[10px] text-slate-300">
-              {available ? 'ถามข้อมูล · สร้างกราฟ · คาดการณ์' : 'กำลังรอข้อมูลที่ยืนยันแล้ว'}
-            </span>
+            <span className="block text-[10px] text-slate-300">{connection.launcher}</span>
           </span>
         </button>
       )}
@@ -413,8 +422,12 @@ export default function SentinelChatbot({
               <div className="min-w-0 flex-1">
                 <h3 className="flex items-center gap-2 text-sm font-black">
                   Sentinel Analyst
-                  <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300">
-                    Online
+                  <span
+                    aria-live="polite"
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wide ${connection.badgeClass}`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${connection.dotClass}`} />
+                    {connection.label}
                   </span>
                 </h3>
                 <p className="mt-0.5 truncate text-[10px] text-slate-300">

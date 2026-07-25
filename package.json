@@ -5,13 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "emulators": "npx --yes firebase-tools@14.23.0 emulators:start --only auth,firestore",
+    "emulators": "npx --yes firebase-tools@14.23.0 emulators:start --only auth,firestore,functions",
     "emulators:seed": "node scripts/seed-emulators.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "npm run test:unit",
-    "test:unit": "node --test scripts/*.test.js src/auth/*.test.js src/config/*.test.js src/data/*.test.js src/domain/*.test.js src/ui/*.test.js",
+    "test:unit": "node --test functions/*.test.js scripts/*.test.js src/auth/*.test.js src/chat/*.test.js src/config/*.test.js src/data/*.test.js src/domain/*.test.js src/ui/*.test.js",
     "test:rules": "npx --yes firebase-tools@14.23.0 emulators:exec --only firestore \"node --test test/firestore.rules.test.js\""
   },
   "dependencies": {

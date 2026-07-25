@@ -21,6 +21,7 @@ import { Skeleton } from './ui/Skeleton.jsx';
 const loadOverviewScreen = () => import('./screens/OverviewScreen.jsx');
 const loadRoomStatusScreen = () => import('./screens/RoomStatusScreen.jsx');
 const loadIndividualScreen = () => import('./screens/IndividualScreen.jsx');
+const SentinelChatbot = lazy(() => import('./chat/SentinelChatbot.jsx'));
 
 const WORKFLOWS = {
   overview: {
@@ -83,6 +84,7 @@ export default function Dashboard({ authorization }) {
     loading,
     issueCount: invalidRecordCount,
     status: dataStatus,
+    datasetVersion,
     truncatedStreams,
     lastUpdatedAt,
     errors,
@@ -253,6 +255,17 @@ export default function Dashboard({ authorization }) {
           )}
         </main>
       </div>
+      <Suspense fallback={null}>
+        <SentinelChatbot
+          analytics={analytics}
+          students={students}
+          logs={logs}
+          assessments={assessments}
+          dataStatus={dataStatus}
+          datasetVersion={datasetVersion}
+          lastUpdatedAt={lastUpdatedAt}
+        />
+      </Suspense>
     </div>
   );
 }

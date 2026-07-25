@@ -10,6 +10,11 @@ async function getHostingHeaders() {
   return Object.fromEntries(catchAll.headers.map(header => [header.key, header.value]));
 }
 
+async function getHostingRewrites() {
+  const config = JSON.parse(await readFile(FIREBASE_CONFIG_URL, 'utf8'));
+  return config.hosting.rewrites;
+}
+
 function getDirective(policy, name) {
   return policy
     .split(';')
@@ -37,4 +42,18 @@ test('script policy blocks inline execution and permits App Check Enterprise', a
   assert.match(policy, /frame-ancestors 'none'/);
   assert.match(scriptPolicy, /https:\/\/www\.google\.com\/recaptcha\//);
   assert.doesNotMatch(scriptPolicy, /'unsafe-inline'|'unsafe-eval'/);
+});
+
+test('chat API is handled by the authenticated server function before the SPA fallback', async () => {
+  const rewrites = await getHostingRewrites();
+
+  assert.equal(rewrites[0].source, '/api/chat');
+  assert.deepEqual(rewrites[0].function, {
+    functionId: 'sentinelChat',
+    region: 'asia-southeast1',
+  });
+  assert.deepEqual(rewrites.at(-1), {
+    source: '**',
+    destination: '/index.html',
+  });
 });

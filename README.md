@@ -17,6 +17,7 @@ so closing the tab or browser clears the saved sign-in state.
 - npm
 - Java 21 recommended for the Firestore Emulator
 - A Firebase web app with Google sign-in enabled
+- An OpenRouter API key for Sentinel Analyst
 
 ## Local setup
 
@@ -27,7 +28,10 @@ actual Vite dev-server command, not the selectable mode name, so
 
 ```sh
 npm ci
+npm ci --prefix functions
 cp .env.development.example .env.development.local
+cp functions/.secret.local.example functions/.secret.local
+cp functions/.env.local.example functions/.env.local
 npm run emulators
 ```
 
@@ -44,6 +48,10 @@ to the emulator to create a verified test user with
 synthetic dataset through the loopback-only emulator REST API. It refuses
 non-`demo-*` projects and non-loopback hosts; it is not included in the browser
 client and cannot write to a remote Firebase project.
+
+Set the real local-only OpenRouter key in `functions/.secret.local`. The
+browser calls the Functions emulator through Vite's same-origin `/api/chat`
+proxy, so the key is never embedded in browser JavaScript.
 
 Remote builds use `.env.example` as a template. Every placeholder must be
 replaced, `VITE_FIREBASE_USE_EMULATORS` must be `false`, and an App Check site
@@ -103,6 +111,26 @@ in [CONTEXT.md](CONTEXT.md).
 - [Security model](docs/security.md)
 - [Deployment runbook](docs/deployment.md)
 - [Architecture decision records](docs/adr/)
+
+## Sentinel Analyst
+
+The floating assistant appears only after an authorized user opens the
+dashboard. It works from the same verified, fail-closed dataset as the three
+workflow screens. General questions receive aggregate context; student and room
+details are selected only when a question requires them. The server replaces
+student names and IDs with per-request aliases and removes sensitive free text
+before OpenRouter Fusion performs multi-model deliberation. A separate
+structured-output formatter maps the evidence back to the authorized user's
+original context and produces validated text, tables, and Recharts
+visualizations. Exploratory predictions use a bounded linear trend and are
+always labeled as decision support rather than diagnosis.
+
+OpenRouter is called only from the authenticated Cloud Function. Every remote
+request requires a verified Firebase ID token, an allowed clinical role, and a
+valid App Check token. Fusion is forced for each question with the
+`general-fast` preset; its memo is passed to a ZDR structured-output formatter.
+Both stages disallow data-collecting providers and enforce Zero Data Retention
+endpoints.
 
 Administrative imports and fixture generation deliberately do not exist in
 this client. Put those operations in separately authorized server-side tooling

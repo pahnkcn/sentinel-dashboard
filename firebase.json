@@ -2,6 +2,19 @@
   "firestore": {
     "rules": "firestore.rules"
   },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ],
   "emulators": {
     "auth": {
       "host": "127.0.0.1",
@@ -10,6 +23,10 @@
     "firestore": {
       "host": "127.0.0.1",
       "port": 8080
+    },
+    "functions": {
+      "host": "127.0.0.1",
+      "port": 5001
     }
   },
   "hosting": {
@@ -20,6 +37,13 @@
       "**/node_modules/**"
     ],
     "rewrites": [
+      {
+        "source": "/api/chat",
+        "function": {
+          "functionId": "sentinelChat",
+          "region": "asia-southeast1"
+        }
+      },
       {
         "source": "**",
         "destination": "/index.html"

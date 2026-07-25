@@ -20,6 +20,13 @@ flowchart LR
   Analytics --> Overview["Overview screen"]
   Analytics --> Room["Room Status screen"]
   Analytics --> Individual["Individual screen"]
+  Analytics --> Context["Question-aware chat context"]
+  Context --> Function["Authenticated chat Function"]
+  Function --> Redact["Per-request aliases / free-text removal"]
+  Redact --> Router["OpenRouter Fusion ZDR"]
+  Router --> Format["Structured-output formatter ZDR"]
+  Format --> Function
+  Function --> Chat["Validated text / table / chart"]
 ```
 
 The composition direction is one-way. Screens know the analytics Interface,
@@ -141,6 +148,36 @@ Room and individual workflows label every carried-forward Buddy or Command
 value with its source date so presentation continuity cannot be mistaken for a
 new observation.
 
+### Sentinel Analyst Module
+
+The authorized dashboard lazily loads the floating assistant. Its context
+builder consumes the same Monitoring Analytics Interface and verified records
+as the workflow screens. Aggregate questions omit identifiable student
+profiles. Name, ID, room, ranking, and follow-up language selects only the
+relevant compact profiles; complete longitudinal detail is capped and included
+only for explicitly matched students. Future-dated observations remain
+withheld.
+
+Prediction requests use a deterministic, bounded ordinary-least-squares trend
+computed in the browser from verified points. The model may explain or chart
+that projection but is instructed not to invent another forecast. This is
+exploratory decision support, not clinical diagnosis.
+
+The browser never receives the OpenRouter key. It sends a Firebase ID token,
+App Check token, bounded conversation, and question-aware context to the
+same-origin `/api/chat` Function. The Function repeats verified-email and exact
+role authorization and applies a per-instance request limit.
+
+Before Fusion, the Function replaces every included name and student ID with a
+per-request `subject_*` alias. Demographic free text and drawing notes are
+removed, while bounded numeric observations, assessments, room summaries, and
+predictions remain. Fusion is forced with a low-latency preset and produces an
+evidence memo. Because the Fusion alias is not itself a structured-output model,
+a separate ZDR formatter receives that memo plus the original authorized
+context and emits the strict response schema. The response is normalized to a
+fixed text, highlight, table, and chart shape before React renders it. Chat
+history stays in component memory and is cleared on sign-out or page close.
+
 ## Dependency rules
 
 1. `auth/` may depend on Firebase Auth and shared config, never Firestore.
@@ -150,6 +187,8 @@ new observation.
    snapshots or Firebase SDKs.
 5. `App.jsx` is the authorization composition root; `Dashboard.jsx` is the
    authorized workflow composition root.
+6. `chat/` may consume analytics and authenticated public Interfaces, while the
+   server Function owns provider credentials and repeats authorization.
 
 These rules preserve Depth and Locality. New data sources should implement the
 Adapter Seam; new presentation variants should consume existing analytics

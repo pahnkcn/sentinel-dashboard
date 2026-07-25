@@ -14,13 +14,14 @@ export const { firebaseConfig, useEmulators } = environment;
 const isNewApp = getApps().length === 0;
 export const app = isNewApp ? initializeApp(firebaseConfig) : getApps()[0];
 export const auth = initializeSessionAuth(app);
+export let appCheck = null;
 
 if (isNewApp && useEmulators) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
 }
 
 if (isNewApp && !useEmulators && environment.appCheckSiteKey && typeof window !== 'undefined') {
-  initializeAppCheck(app, {
+  appCheck = initializeAppCheck(app, {
     provider: new ReCaptchaEnterpriseProvider(environment.appCheckSiteKey),
     isTokenAutoRefreshEnabled: true,
   });

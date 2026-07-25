@@ -8,6 +8,11 @@ administrative credentials are privileged security data. Availability and
 freshness also matter because partial or future-leaking data can produce unsafe
 monitoring decisions.
 
+Sentinel Analyst may transmit a question-specific subset of this sensitive data
+to OpenRouter and its selected model provider. Deployment owners must approve
+that processing and the applicable data-residency, contractual, and clinical
+policies before enabling the Function in a real environment.
+
 ## Trust boundaries
 
 1. The browser and all Firestore documents are untrusted inputs.
@@ -16,6 +21,8 @@ monitoring decisions.
 3. Firestore Security Rules are the server-enforced authorization boundary.
 4. Strict decoders are the data-shape boundary.
 5. The analytics Module is the domain-rule boundary.
+6. The authenticated Cloud Function is the OpenRouter credential and outbound
+   AI boundary; model output is untrusted presentation data.
 
 ## Implemented controls
 
@@ -38,6 +45,11 @@ monitoring decisions.
 | Unnecessary pre-auth code/data path | Dashboard, Firestore, and charts load only after authorization |
 | Automated abuse | Required reCAPTCHA Enterprise App Check for remote builds and CSP support |
 | Accidental local access to live data | No fallback config; Vite `command`/`isPreview`, not user-selectable mode names, force every actual dev server to localhost emulators |
+| OpenRouter key exposure | Secret Manager-bound Function secret; no `VITE_*` key and no direct browser request |
+| Unauthorized AI access | Function verifies ID token, verified email, exact clinical role, App Check, request method, body size, and request rate |
+| Excessive AI disclosure | Question-aware context defaults to aggregates; Fusion receives per-request subject aliases, no names/IDs, and no sensitive demographic/drawing free text |
+| Provider retention or training | Every request requires `data_collection: "deny"` and `zdr: true`; deployment policy must also keep OpenRouter input/output logging disabled |
+| Hallucinated or unsafe output | Fusion deliberation is treated as untrusted evidence; a separate strict-schema formatter checks it against verified context before server normalization |
 
 Unit tests cover claim classification, safe Auth error reporting, hosting
 headers, decoding, server-snapshot verification, subscription lifecycle, and
@@ -71,10 +83,25 @@ that cannot reconstruct individuals. See ADR 0005.
   transport verification alone does not prove that upstream observations were
   entered on schedule.
 - Use managed devices and avoid shared browser profiles for clinical access.
+- Complete privacy, data-processing, residency, model-provider, and clinical
+  safety review before enabling Sentinel Analyst with real records.
+- Keep OpenRouter input/output logging and data-discount sharing disabled,
+  enforce a key credit limit, review usage metadata, and rotate the key under
+  the incident procedure.
 
 ## Residual constraints
 
 - Sensitive records remain in memory while an authorized dashboard is open.
+- De-identified numeric records and room summaries leave the Firebase
+  environment for the Fusion panel; the formatter receives relevant original
+  context. ZDR and aliases reduce risk but do not remove the need for legal,
+  organizational, and provider review.
+- Fusion exposes web-search and web-fetch tools to panel and judge calls. The
+  prompt forbids their use for this closed dataset, but that instruction is not
+  a security boundary; identity removal before Fusion is the compensating
+  control.
+- The in-memory request limiter is an abuse guard, not a globally exact quota;
+  set OpenRouter key budgets and platform-level controls as the cost boundary.
 - Session persistence limits saved Auth state to the current tab, but it is not
   an inactivity timeout. Staff must lock managed devices and close the tab or
   sign out when leaving the workstation.

@@ -13,8 +13,10 @@
    Rules deployment has succeeded and its access probes pass.
 6. Use `.env.example` as the remote build template and replace every
    placeholder for that project. Never reuse the development emulator file.
-7. Create an OpenRouter key dedicated to this deployment, set a credit limit,
-   and keep input/output logging and data-discount sharing disabled.
+7. Create an OpenRouter key dedicated to this deployment with access to
+   `z-ai/glm-5.2`, set a credit limit, and keep input/output logging and
+   data-discount sharing disabled. Do not reuse a personal or unrelated
+   application key.
 
 Never put a service-account key, Admin SDK credential, or other secret in a
 `VITE_*` variable. Vite embeds those values in public browser assets.
@@ -163,15 +165,30 @@ npx --yes firebase-tools@14.23.0 functions:secrets:set OPENROUTER_API_KEY \
   --project YOUR_PROJECT_ID
 ```
 
-Set `OPENROUTER_MODEL` and `OPENROUTER_SITE_URL` as Functions string
-parameters when prompted during deployment, or in the reviewed project-specific
-Functions environment configuration. The default model is
-`google/gemini-3.6-flash`. Before each release, confirm the configured model
-still supports strict structured output and has an endpoint available under
-Zero Data Retention routing.
+Set `OPENROUTER_MODEL` and the required `OPENROUTER_PROVIDER` as Functions
+string parameters when prompted during deployment, or in the reviewed
+project-specific Functions environment configuration. `OPENROUTER_MODEL` must
+be exactly `z-ai/glm-5.2`; the Function rejects any other value. The Function's
+OpenRouter client deliberately omits optional attribution headers such as
+`HTTP-Referer` and `X-OpenRouter-Title` to avoid disclosing deployment metadata.
+
+Set `OPENROUTER_PROVIDER` to the one exact OpenRouter provider slug approved by
+the data-processing and residency review. A missing or malformed setting fails
+local configuration validation before egress; a syntactically valid but
+unavailable slug selects the deterministic provider fallback.
+
+Before each release, confirm that `z-ai/glm-5.2` still supports the required
+strict structured-output parameters and has an approved endpoint available
+under Zero Data Retention routing. Provider fallback is disabled, so absence of
+a compatible ZDR route must fail rather than silently selecting a different
+route. This OpenRouter routing control is separate from the Function's
+application-layer deterministic fallback. Re-run contractual, residency,
+privacy, and clinical review whenever the model endpoint or provider terms
+change.
 
 Deploy the Function and verify signed-out, wrong-role, missing-App-Check,
-invalid-body, rate-limit, provider-failure, and authorized success paths:
+invalid-body, rate-limit, deterministic-route, model-route, and deterministic
+application-fallback paths:
 
 ```sh
 npx --yes firebase-tools@14.23.0 deploy \
@@ -183,6 +200,38 @@ Do not enable the chatbot with real records until the organization approves
 OpenRouter and underlying provider processing. Confirm the OpenRouter account
 does not enable input/output logging or data-discount sharing and that the
 dedicated key has an appropriate budget.
+
+This design does not claim zero egress. Individual, people-ranking, room,
+coverage, latest-value, week-comparison, forecast, chart, table, causal,
+explicit-metric overview, privacy/safety/clarification, and small-cohort
+requests are deterministic local-only Function routes and do not call the
+provider. Only a broad, multi-metric population-overview narrative with at
+least one usable cohort trend can send a canonical task and qualitative
+directions for available metrics to OpenRouter and the pinned provider with
+`data_collection: "deny"` and `zdr: true`. Exact scores, counts, dates, names,
+student IDs, room identifiers, alert status, missing-data status, drawing
+notes, and designated demographic narratives are absent. The complete dynamic
+outbound packet is capped at 1,536 UTF-8 bytes.
+
+The provider response must use a strict schema containing only `answer`,
+`confidence`, and `followUps`, with a maximum output of 800 tokens. It must not
+contain digits or identifiers. After validation, the Function merges exact
+deterministic highlights, data coverage, and method note into the final UI
+payload; those exact values are not disclosed to the model.
+
+The Function prepares a deterministic overview before a model call. It returns
+that result when the key or configuration is unavailable, provider capacity or
+credit fails, the request times out, or model schema/disclosure validation
+fails. When the failure occurs after the request was sent, this fallback does
+not mean zero egress; verify the response privacy field
+`externalRequestAttempted`. Do not confuse this application fallback with
+OpenRouter provider fallback, which remains disabled.
+
+Before deploying, verify the Function service account has only the reviewed
+permissions it needs. The server monitoring repository uses the Admin SDK and
+bypasses Firestore Security Rules; exact current-manifest paths, bounded stream
+reads, strict decoding, referential-integrity checks, and the second manifest
+read are therefore mandatory server controls.
 
 ## 8. Deploy Hosting separately
 
@@ -226,14 +275,50 @@ Verify all of the following:
 - the OpenRouter key is absent from browser assets and network responses;
 - `/api/chat` rejects missing/invalid Auth and App Check, accepts only
   clinician/admin users, and returns `Cache-Control: no-store`;
+- `/api/chat` accepts only `question` and `expectedDatasetVersion`; legacy or
+  forged `messages`, `context`, records, and unknown fields are rejected;
+- a browser/server dataset-version mismatch is rejected without calling the
+  provider;
 - chat input stays disabled until the verified dataset is ready and while one
   response is in flight;
-- aggregate questions omit student detail, specific questions retrieve only
-  relevant detail, and future-dated records remain withheld;
-- text, table, graph, prediction, provider error, and clear-conversation flows
-  behave as reviewed;
-- each successful question produces one OpenRouter generation and returns the
-  strict UI schema;
+- server retrieval reads only the exact manifest-selected bounded collections,
+  rejects invalid, truncated, orphaned, or mid-read version changes, and never
+  uses future-dated observations or assessments beyond the latest observed
+  week;
+- privacy/safety/clarification and causal questions produce no OpenRouter
+  request;
+- individual, people-ranking, room, coverage, latest-value, week-comparison,
+  forecast, chart, table, explicit-metric overview, and small-cohort questions
+  use the deterministic local-derived route with zero disclosure bytes;
+- only a broad all-relevant, multi-metric population-overview summary with at
+  least one usable cohort trend can produce an OpenRouter request;
+- model-backed requests contain a canonical task rather than the raw user
+  question and expose only qualitative directions for available metrics;
+  exact scores, counts, dates, names, IDs, rooms, alerts, missing-data status,
+  raw notes, and demographic narratives are absent; and the packet remains
+  within the 1,536-byte dynamic disclosure cap;
+- the model-backed request is pinned to `z-ai/glm-5.2`, has OpenRouter provider
+  fallback disabled, honors the reviewed `OPENROUTER_PROVIDER` policy, and
+  requires both `data_collection: "deny"` and `zdr: true`;
+- the provider request uses `max_tokens: 800` and its strict schema permits only
+  `answer`, `confidence`, and `followUps`;
+- valid model responses pass strict schema and disclosure validation; responses
+  containing digits, undisclosed entity tokens, or extra fields select the
+  deterministic fallback rather than reaching the UI;
+- after a valid model response, exact deterministic highlights, data coverage,
+  and method note are merged on the server and match the same verified
+  aggregate evidence used by the local fallback;
+- missing key/configuration, provider or credit failure, timeout, empty output,
+  invalid schema, and disclosure-validation failure all return the reviewed
+  deterministic overview with route `local-provider-fallback`;
+- fallback tests distinguish a pre-request fallback from one returned after an
+  external attempt by checking `privacy.externalRequestAttempted`; no test or
+  operator report treats every fallback as zero egress;
+- deterministic text, table, graph, prediction, application fallback, and
+  clear-conversation flows behave as reviewed;
+- each model-backed question produces at most one OpenRouter generation and
+  either a validated result or deterministic fallback; a primary local-only
+  question produces no generation;
 - sign-out returns to the access gate and disconnects listeners;
 - response headers include CSP, HSTS, `nosniff`, frame denial, referrer policy,
   permissions policy, COOP, and CORP.

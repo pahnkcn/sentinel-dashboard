@@ -6,23 +6,38 @@ import {
   validateChatRequest,
 } from './chatPolicy.js';
 
-test('chat request accepts bounded user conversation and context', () => {
+test('chat request accepts only a bounded question and expected dataset version', () => {
   const result = validateChatRequest({
-    messages: [{ role: 'user', content: 'สรุปภาพรวม' }],
-    context: { source: { datasetVersion: 'v1' } },
+    question: 'สรุปภาพรวม',
+    expectedDatasetVersion: 'v1',
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.value.messages.length, 1);
+  assert.deepEqual(result.value.messages, [{ role: 'user', content: 'สรุปภาพรวม' }]);
 });
 
-test('chat request rejects a conversation that does not end with the user', () => {
-  const result = validateChatRequest({
-    messages: [{ role: 'assistant', content: 'answer' }],
-    context: {},
-  });
-
-  assert.deepEqual(result, { ok: false, code: 'last-message-must-be-user' });
+test('chat request rejects legacy context, messages, extras, and oversized questions', () => {
+  assert.deepEqual(
+    validateChatRequest({
+      messages: [{ role: 'user', content: 'สรุป' }],
+      context: {},
+    }),
+    { ok: false, code: 'client-context-forbidden' },
+  );
+  assert.deepEqual(
+    validateChatRequest({
+      question: 'x'.repeat(1_201),
+      expectedDatasetVersion: 'v1',
+    }),
+    { ok: false, code: 'question-too-large' },
+  );
+  assert.deepEqual(
+    validateChatRequest({
+      question: 'สรุป',
+      expectedDatasetVersion: '../unsafe',
+    }),
+    { ok: false, code: 'invalid-dataset-version' },
+  );
 });
 
 test('assistant payload is normalized before it reaches the browser', () => {
@@ -49,6 +64,25 @@ test('assistant payload is normalized before it reaches the browser', () => {
 
   assert.equal(payload.chart.series[0].id, 'self');
   assert.deepEqual(payload.chart.points[1].values, [2]);
+});
+
+test('table normalization preserves empty cells in their original columns', () => {
+  const payload = parseAssistantPayload(JSON.stringify({
+    answer: 'ตารางผ่านการตรวจสอบ',
+    highlights: [],
+    confidence: 'high',
+    dataCoverage: 'ข้อมูลจำลอง',
+    table: {
+      title: 'ตาราง',
+      columns: ['หนึ่ง', 'สอง', 'สาม'],
+      rows: [['alpha', '', 'gamma']],
+    },
+    chart: null,
+    methodNote: null,
+    followUps: [],
+  }));
+
+  assert.deepEqual(payload.table.rows[0], ['alpha', '', 'gamma']);
 });
 
 test('assistant payload rejects a placeholder-only answer', () => {

@@ -257,13 +257,8 @@ export default function Dashboard({ authorization }) {
       </div>
       <Suspense fallback={null}>
         <SentinelChatbot
-          analytics={analytics}
-          students={students}
-          logs={logs}
-          assessments={assessments}
           dataStatus={dataStatus}
           datasetVersion={datasetVersion}
-          lastUpdatedAt={lastUpdatedAt}
         />
       </Suspense>
     </div>

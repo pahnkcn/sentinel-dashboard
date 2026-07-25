@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 
 import { askSentinelAssistant } from './chatApi.js';
-import { createChatContext } from './chatContext.js';
 import { getChatConnectionPresentation } from './chatStatus.js';
 
 const QUICK_QUESTIONS = [
@@ -233,6 +232,25 @@ function AssistantMessage({ message, disabled, onFollowUp }) {
             </span>
             <span className="min-w-0 break-all">{message.model}</span>
             {message.totalTokens && <span className="break-words">· {message.totalTokens.toLocaleString('th-TH')} tokens</span>}
+            <span
+              className={`rounded-full px-2 py-1 font-bold ${
+                message.externalRequestAttempted
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-emerald-100 text-emerald-700'
+              }`}
+            >
+              AI model: {message.externalRequestAttempted ? 'ใช้' : 'ไม่ใช้'}
+            </span>
+            {message.externalRequestAttempted && (
+              <span className="break-words">
+                · {message.route === 'server-minimized' ? 'ส่ง' : 'พยายามส่ง'} trend ลดทอน {message.disclosureBytes.toLocaleString('th-TH')} ไบต์
+              </span>
+            )}
+            {!message.externalRequestAttempted && (
+              <span className="break-words">
+                · ประมวลผลแบบ deterministic
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -257,13 +275,8 @@ function AssistantMessage({ message, disabled, onFollowUp }) {
 }
 
 export default function SentinelChatbot({
-  analytics,
-  students,
-  logs,
-  assessments,
   dataStatus,
   datasetVersion,
-  lastUpdatedAt,
 }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -307,26 +320,6 @@ export default function SentinelChatbot({
       role: 'user',
       content: question,
     };
-    const apiMessages = [
-      ...messages
-        .filter(message => message.role === 'user' || message.role === 'assistant')
-        .map(message => ({
-          role: message.role,
-          content: message.role === 'assistant' ? message.payload.answer : message.content,
-        })),
-      { role: 'user', content: question },
-    ].slice(-12);
-    const context = createChatContext({
-      analytics,
-      students,
-      logs,
-      assessments,
-      datasetVersion,
-      lastUpdatedAt,
-      question,
-      conversation: apiMessages,
-    });
-
     setMessages(current => [...current, userMessage]);
     setInput('');
     setError(null);
@@ -336,8 +329,8 @@ export default function SentinelChatbot({
 
     try {
       const response = await askSentinelAssistant({
-        messages: apiMessages,
-        context,
+        question,
+        expectedDatasetVersion: datasetVersion,
         signal: controller.signal,
       });
       setMessages(current => [
@@ -347,7 +340,14 @@ export default function SentinelChatbot({
           role: 'assistant',
           payload: response.payload,
           model: response.model,
+          route: typeof response.route === 'string' ? response.route : '',
           totalTokens: response.usage?.totalTokens ?? null,
+          disclosureBytes: Number.isSafeInteger(response.privacy?.disclosureBytes)
+            && response.privacy.disclosureBytes >= 0
+            ? response.privacy.disclosureBytes
+            : 0,
+          externalRequestAttempted:
+            response.privacy?.externalRequestAttempted === true,
         },
       ]);
       setApiState('online');
@@ -430,8 +430,11 @@ export default function SentinelChatbot({
                     {connection.label}
                   </span>
                 </h3>
-                <p className="mt-0.5 truncate text-[10px] text-slate-300">
-                  วิเคราะห์จากข้อมูลที่ยืนยันแล้ว · OpenRouter ZDR
+                <p
+                  className="mt-0.5 truncate text-[10px] text-slate-300"
+                  title="คำนวณในระบบเป็นหลัก เฉพาะแนวโน้มภาพรวมที่ลดทอนแล้วอาจส่งภายนอกแบบ ZDR"
+                >
+                  คำนวณในระบบเป็นหลัก · แนวโน้มภาพรวมที่ลดทอนแล้วอาจส่งภายนอกแบบ ZDR
                 </p>
               </div>
               <button
@@ -528,7 +531,7 @@ export default function SentinelChatbot({
                 ref={inputRef}
                 id="sentinel-chat-input"
                 rows={1}
-                maxLength={3_000}
+                maxLength={1_200}
                 value={input}
                 disabled={pending || !available}
                 onChange={event => setInput(event.target.value)}
@@ -548,7 +551,7 @@ export default function SentinelChatbot({
             <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 text-[9px] text-slate-400">
               <span className="flex items-center gap-1">
                 <LockKeyhole size={10} />
-                ไม่บันทึกประวัติในเครื่อง · ส่งเฉพาะบริบทที่เกี่ยวข้อง
+                ไม่จัดเก็บประวัติแบบถาวร · ไม่ควรวางรายละเอียดส่วนบุคคลเพิ่ม
               </span>
               <span>Enter ส่ง · Shift+Enter ขึ้นบรรทัด</span>
             </div>

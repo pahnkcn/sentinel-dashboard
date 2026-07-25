@@ -9,6 +9,9 @@ const ERROR_MESSAGES = Object.freeze({
   'chat-timeout': 'การวิเคราะห์ใช้เวลานานเกินไป กรุณาลองถามให้แคบลง',
   'chat-busy': 'ระบบวิเคราะห์กำลังมีผู้ใช้งานมาก กรุณารอสักครู่แล้วลองใหม่',
   'chat-unavailable': 'ไม่สามารถรับคำตอบจากระบบวิเคราะห์ได้ในขณะนี้',
+  'chat-data-unavailable': 'ข้อมูลฝั่งเซิร์ฟเวอร์ยังไม่พร้อมสำหรับการวิเคราะห์',
+  'chat-privacy-blocked': 'คำขอนี้ถูกหยุดเพื่อป้องกันการเปิดเผยข้อมูลมากเกินไป กรุณาถามให้แคบลง',
+  'chat-stale-dataset': 'ข้อมูลบนหน้าจอเปลี่ยนเวอร์ชันแล้ว กรุณารอให้ซิงก์เสร็จและถามอีกครั้ง',
   'rate-limited': 'ส่งคำถามถี่เกินไป กรุณารอสักครู่ก่อนถามอีกครั้ง',
   'invalid-auth': 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
   'missing-auth': 'ไม่พบเซสชันผู้ใช้ กรุณาเข้าสู่ระบบใหม่',
@@ -25,7 +28,7 @@ function publicError(code) {
   return error;
 }
 
-export async function askSentinelAssistant({ messages, context, signal }) {
+export async function askSentinelAssistant({ question, expectedDatasetVersion, signal }) {
   const user = auth.currentUser;
   if (!user) throw publicError('missing-auth');
 
@@ -42,7 +45,7 @@ export async function askSentinelAssistant({ messages, context, signal }) {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ messages, context }),
+    body: JSON.stringify({ question, expectedDatasetVersion }),
     signal,
   });
   const body = await response.json().catch(() => null);

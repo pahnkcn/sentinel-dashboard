@@ -136,7 +136,10 @@ semantic state, and minimized evidence. The natural-language question, prior
 free-form turns, and internal dataset label are not forwarded to the provider.
 The model returns a strict structured response for validated text, tables, and
 Recharts visualizations. The UI restores aliases locally and shows a
-per-response disclosure receipt. Latest lookups and counts, bounded latest
+per-response disclosure receipt. Each receipt can be expanded to inspect the
+exact alias-only metrics, scalar values, time points, or server-derived
+statistics referenced by that response, together with the fields that were
+withheld. Latest lookups and counts, bounded latest
 comparisons, window means, supplied or unavailable forecasts, non-causal trend
 explanations, high-dimensional trend tables, and evidence-ordered rankings are
 answered deterministically inside the Function when no model synthesis is

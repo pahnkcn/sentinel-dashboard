@@ -195,7 +195,11 @@ corrected deterministically before display. A slow or invalid provider response
 falls back to a visibly labeled evidence-only answer, except HTTP 402, which is
 returned unchanged. The Function reverses its
 provider-only alias mapping, then React restores display names locally and
-shows a disclosure receipt. UI
+shows an expandable disclosure receipt. The receipt derives its reference
+manifest from the actual minimized provider message for remote synthesis and
+from the verified evidence envelope for local-only computation, so it can
+distinguish raw time points from server-derived statistics without exposing
+omitted identifiers. UI
 history, semantic state, alias maps, and the small evidence cache stay in memory
 and clear together on reset, sign-out, dataset rollover, readiness loss, or page
 close.

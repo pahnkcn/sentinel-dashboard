@@ -70,6 +70,297 @@ const LIMITATION_LABELS = Object.freeze({
   'requested-output-unavailable': 'ไม่สามารถสร้างรูปแบบผลลัพธ์ที่ขอได้ครบ',
   'provider-fallback': 'ใช้คำตอบสำรองจากหลักฐานในระบบ เพราะโมเดลภายนอกไม่พร้อมตอบ',
 });
+const METRIC_LABELS = Object.freeze({
+  self: 'Self',
+  buddy: 'Buddy',
+  command: 'Command',
+  depression: 'Depression',
+  anxiety: 'Anxiety',
+  stress: 'Stress',
+  cd_risc: 'CD-RISC',
+  grit: 'Grit',
+  mental_severity: 'ระดับสุขภาพจิต',
+  physical_injury: 'การบาดเจ็บทางกาย',
+  total_students: 'จำนวนนักเรียนทั้งหมด',
+  observed_students: 'จำนวนนักเรียนที่มีข้อมูล',
+  concern_count: 'จำนวนที่ควรติดตาม',
+  physical_concern_count: 'จำนวนสัญญาณทางกาย',
+  alert_red3: 'สัญญาณ Red 3',
+  alert_red_self_plus: 'สัญญาณ Red Self+',
+  psychiatric_care: 'จำนวนที่อยู่ในการดูแลจิตเวช',
+});
+const OPERATION_LABELS = Object.freeze({
+  summarize: 'สรุปข้อมูล',
+  lookup: 'ค้นหาค่า',
+  trend: 'วิเคราะห์แนวโน้ม',
+  compare: 'เปรียบเทียบ',
+  rank: 'จัดอันดับ',
+  count: 'นับจำนวน',
+  forecast: 'คาดการณ์',
+});
+const SCOPE_LABELS = Object.freeze({
+  overview: 'ภาพรวม',
+  subject: 'รายบุคคลแบบนามแฝง',
+  room: 'รายห้องแบบนามแฝง',
+});
+const TIME_MODE_LABELS = Object.freeze({
+  latest: 'ข้อมูลล่าสุด',
+  available_range: 'ทุกช่วงที่มีข้อมูล',
+  week_windows: 'ช่วงสัปดาห์ที่ระบุ',
+  recent_vs_previous: 'ช่วงล่าสุดเทียบช่วงก่อนหน้า',
+  forecast_horizon: 'ช่วงคาดการณ์',
+});
+const OMITTED_FIELD_LABELS = Object.freeze({
+  names: 'ชื่อจริง',
+  'student-ids': 'รหัสประจำตัว',
+  'room-names': 'ชื่อห้องจริง',
+  demographics: 'ข้อมูลประชากร',
+  'free-text-notes': 'บันทึกข้อความอิสระ',
+  'raw-records': 'ระเบียนดิบ',
+  'full-transcript': 'ประวัติสนทนาทั้งหมด',
+  'unrequested-metrics': 'ตัวชี้วัดที่ไม่ได้ถาม',
+  'small-groups': 'ข้อมูลกลุ่มขนาดเล็ก',
+});
+const CONSTRAINT_LABELS = Object.freeze({
+  'verified-data-only': 'ใช้เฉพาะข้อมูลที่ผ่านการตรวจสอบ',
+  'carried-forward-is-not-new': 'ไม่นับ carried-forward เป็นการสังเกตใหม่',
+  'decision-support-only': 'ใช้เพื่อสนับสนุนการตัดสินใจเท่านั้น',
+  'prediction-is-exploratory': 'การคาดการณ์เป็นเชิงสำรวจ',
+  'prediction-ordinary-least-squares': 'คาดการณ์ด้วยแนวโน้มเชิงเส้น OLS',
+  'insufficient-small-group': 'ปกปิดกลุ่มที่มีขนาดต่ำกว่าเกณฑ์',
+});
+const DERIVED_FIELD_LABELS = Object.freeze({
+  first: 'ค่าแรก',
+  last: 'ค่าล่าสุด',
+  min: 'ต่ำสุด',
+  max: 'สูงสุด',
+  mean: 'เฉลี่ย',
+  change: 'ผลต่าง',
+  slopePerWeek: 'ความชัน/สัปดาห์',
+  observedPoints: 'จุดสังเกตจริง',
+});
+
+function formatReferenceNumber(value) {
+  if (value === null) return 'ไม่มีค่า';
+  if (!Number.isFinite(value)) return String(value ?? '—');
+  return new Intl.NumberFormat('th-TH', { maximumFractionDigits: 4 }).format(value);
+}
+
+function referenceMetricLabel(metric) {
+  const forecast = metric.endsWith('_forecast');
+  const base = forecast ? metric.slice(0, -'_forecast'.length) : metric;
+  const label = METRIC_LABELS[base] ?? base;
+  return forecast ? `${label} (คาดการณ์)` : label;
+}
+
+function referencePosition(value) {
+  const labels = [];
+  if (Number.isInteger(value.week)) labels.push(`สัปดาห์ ${value.week}`);
+  if (value.date) labels.push(value.date);
+  return labels.join(' · ') || 'ค่าล่าสุด';
+}
+
+function ReferenceSummary({ summary, title }) {
+  const values = Object.entries(DERIVED_FIELD_LABELS)
+    .filter(([key]) => summary?.[key] !== undefined && summary[key] !== null);
+  const period = Number.isInteger(summary?.fromWeek) && Number.isInteger(summary?.toWeek)
+    ? `สัปดาห์ ${summary.fromWeek}–${summary.toWeek}`
+    : null;
+  if (values.length === 0 && !period) return null;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+      <p className="font-bold text-slate-600">{title}{period ? ` · ${period}` : ''}</p>
+      <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-3">
+        {values.map(([key, label]) => (
+          <div key={key} className="min-w-0">
+            <dt className="text-[9px] text-slate-400">{label}</dt>
+            <dd className="break-all font-semibold text-slate-700">
+              {formatReferenceNumber(summary[key])}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function ReferenceMetric({ metric }) {
+  const representationLabel = {
+    scalar: 'ค่ารายการเดียว',
+    points: 'จุดข้อมูลที่ส่ง',
+    derived: 'ค่าสรุปที่คำนวณแล้ว · ไม่ส่งจุดข้อมูลดิบ',
+    'points-and-derived': 'จุดข้อมูลและค่าสรุปที่คำนวณแล้ว',
+  }[metric.representation] ?? metric.representation;
+  return (
+    <section className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-2.5">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5">
+        <h6 className="break-words font-bold text-slate-700">
+          {referenceMetricLabel(metric.metric)}
+        </h6>
+        <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold text-emerald-700 ring-1 ring-emerald-100">
+          {representationLabel}
+        </span>
+      </div>
+
+      {Object.hasOwn(metric, 'value') && (
+        <div className="mt-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+          <p className="font-bold text-slate-700">
+            {referencePosition(metric)} = {formatReferenceNumber(metric.value)}
+          </p>
+          <p className="mt-0.5 text-[9px] text-slate-400">
+            {metric.rank ? `อันดับ ${metric.rank} · ` : ''}
+            {metric.sampleSize ? `กลุ่มตัวอย่าง ${metric.sampleSize} คน · ` : ''}
+            {metric.carriedForward ? 'นำค่าจากครั้งก่อนมาใช้' : 'ค่าที่สังเกตจริง'}
+          </p>
+        </div>
+      )}
+
+      {metric.points?.length > 0 && (
+        <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+          <table className="w-full text-left text-[10px]">
+            <thead className="sticky top-0 bg-slate-50 text-slate-500">
+              <tr>
+                <th className="px-2.5 py-1.5 font-bold">ช่วงข้อมูล</th>
+                <th className="px-2.5 py-1.5 text-right font-bold">ค่า</th>
+                <th className="px-2.5 py-1.5 text-right font-bold">สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metric.points.map((point, index) => (
+                <tr key={`${point.week ?? point.date ?? index}-${index}`} className="border-t border-slate-100">
+                  <td className="px-2.5 py-1.5 text-slate-600">{referencePosition(point)}</td>
+                  <td className="px-2.5 py-1.5 text-right font-semibold text-slate-700">
+                    {formatReferenceNumber(point.value)}
+                  </td>
+                  <td className="px-2.5 py-1.5 text-right text-[9px] text-slate-400">
+                    {point.carriedForward ? 'จากครั้งก่อน' : point.sampleSize ? `${point.sampleSize} คน` : 'สังเกตจริง'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {metric.derived?.trend && (
+        <div className="mt-2">
+          <ReferenceSummary summary={metric.derived.trend} title="ค่าสรุปตลอดช่วง" />
+        </div>
+      )}
+      {metric.derived?.windowSummaries?.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {metric.derived.windowSummaries.map((summary, index) => (
+            <ReferenceSummary key={index} summary={summary} title={`ค่าสรุปช่วงที่ ${index + 1}`} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DisclosureDetails({ disclosure, redactionCount }) {
+  const details = disclosure.referenceDetails;
+  const sourceLabel = details?.source === 'model-provider'
+    ? 'รายการด้านล่างคือข้อมูลที่ส่งให้ผู้ให้บริการโมเดลจริง'
+    : details?.source === 'server-local'
+      ? 'รายการด้านล่างใช้คำนวณภายในเซิร์ฟเวอร์เท่านั้น'
+      : 'รายการด้านล่างคือหลักฐานแบบนามแฝงที่ส่งถึง privacy gateway';
+  const timeLabel = details?.time
+    ? TIME_MODE_LABELS[details.time.mode] ?? details.time.mode
+    : null;
+  const windows = details?.time?.windows?.map(window => (
+    `สัปดาห์ ${window.fromWeek}–${window.toWeek}`
+  )).join(', ');
+  const entityLabel = entity => {
+    if (entity.scope === 'overview') return 'ข้อมูลภาพรวม';
+    const alias = String(entity.alias ?? '').replaceAll('[[', '').replaceAll(']]', '');
+    return `${entity.scope === 'room' ? 'ห้อง' : 'บุคคล'}นามแฝง ${alias || 'ไม่ระบุ'}`;
+  };
+
+  return (
+    <details className="group mt-2 rounded-xl border border-emerald-100 bg-emerald-50/70 text-[10px] text-emerald-900">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="block break-words">
+            {disclosure.providerEgress === false
+              ? 'อ้างอิงหลักฐานในเซิร์ฟเวอร์ · ไม่ส่งให้โมเดลภายนอก'
+              : `ส่งหลักฐานแบบนามแฝง ${disclosure.providerAttemptCount ?? 1} ครั้ง · ${(disclosure.byteCount / 1024).toFixed(1)} KB`}
+          </span>
+          <span className="mt-0.5 block font-medium text-emerald-700">กดดูรายละเอียดข้อมูลที่อ้างอิง</span>
+        </span>
+        <ChevronDown size={16} className="flex-shrink-0 transition-transform group-open:rotate-180" />
+      </summary>
+
+      <div className="border-t border-emerald-100 px-3 py-3">
+        <p className="leading-4 text-emerald-800">{sourceLabel}</p>
+        <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg bg-white/80 p-2.5 text-slate-600 sm:grid-cols-3">
+          <div><span className="block text-[9px] text-slate-400">การวิเคราะห์</span><b>{OPERATION_LABELS[details?.operation] ?? details?.operation ?? 'ไม่ระบุ'}</b></div>
+          <div><span className="block text-[9px] text-slate-400">ขอบเขต</span><b>{SCOPE_LABELS[details?.scope] ?? details?.scope ?? 'ไม่ระบุ'}</b></div>
+          <div><span className="block text-[9px] text-slate-400">ช่วงเวลา</span><b>{timeLabel ?? 'ไม่ระบุ'}{windows ? ` · ${windows}` : ''}</b></div>
+        </div>
+
+        <p className="mt-2 leading-4 text-emerald-700">
+          บุคคลแบบนามแฝง {disclosure.subjectCount} ราย · ห้องแบบนามแฝง {disclosure.roomCount} ห้อง · {disclosure.metricCount ?? 0} ชุดข้อมูล ({disclosure.uniqueMetricCount ?? disclosure.metricCount ?? 0} ตัวชี้วัดไม่ซ้ำ) · {disclosure.evidencePointCount ?? disclosure.observedPointCount ?? 0} จุดหลักฐาน
+          {(disclosure.carriedForwardPointCount ?? 0) > 0 ? ` · carried-forward ${disclosure.carriedForwardPointCount} จุด` : ''}
+          {(disclosure.forecastPointCount ?? 0) > 0 ? ` · forecast ${disclosure.forecastPointCount} จุด` : ''}
+          {' · ไม่ส่งประวัติข้อความ'}
+          {redactionCount > 0 ? ` · ปกปิดข้อมูลเพิ่ม ${redactionCount} รายการ` : ''}
+        </p>
+        {disclosure.coverage?.from && disclosure.coverage?.to && (
+          <p className="mt-1 leading-4 text-emerald-700">
+            ช่วงหลักฐาน {disclosure.coverage.from} ถึง {disclosure.coverage.to}
+          </p>
+        )}
+
+        {details?.entities?.length > 0 && (
+          <div className="mt-3 space-y-3">
+            {details.entities.map((entity, entityIndex) => (
+              <section key={`${entity.scope}-${entity.alias ?? entityIndex}`}>
+                <h5 className="mb-1.5 flex flex-wrap items-center gap-1.5 font-bold text-slate-700">
+                  {entityLabel(entity)}
+                  {entity.sampleSize && (
+                    <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-medium text-slate-500 ring-1 ring-slate-200">
+                      กลุ่มตัวอย่าง {entity.sampleSize} คน
+                    </span>
+                  )}
+                </h5>
+                <div className="space-y-2">
+                  {entity.metrics.map((metric, metricIndex) => (
+                    <ReferenceMetric key={`${metric.metric}-${metricIndex}`} metric={metric} />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+
+        {details?.omittedFields?.length > 0 && (
+          <div className="mt-3 rounded-lg border border-emerald-100 bg-white/80 p-2.5">
+            <p className="font-bold text-slate-600">ข้อมูลที่ไม่ถูกส่ง</p>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {details.omittedFields.map(field => (
+                <span key={field} className="rounded-full bg-slate-100 px-2 py-1 text-[9px] text-slate-600">
+                  {OMITTED_FIELD_LABELS[field] ?? field}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {details?.constraints?.length > 0 && (
+          <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50/70 p-2.5">
+            <p className="font-bold text-slate-600">เงื่อนไขกำกับการใช้ข้อมูล</p>
+            <ul className="mt-1.5 space-y-1 text-[9px] leading-4 text-slate-600">
+              {details.constraints.map(constraint => (
+                <li key={constraint}>• {CONSTRAINT_LABELS[constraint] ?? constraint}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
 
 function TypingIndicator() {
   return (
@@ -274,31 +565,7 @@ function AssistantMessage({ message, disabled, onFollowUp }) {
             {message.totalTokens && <span className="break-words">· {message.totalTokens.toLocaleString('th-TH')} tokens</span>}
           </div>
           {disclosure && (
-            <details className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-[10px] text-emerald-800">
-              <summary className="cursor-pointer font-bold">
-                {disclosure.providerEgress === false
-                  ? 'คำนวณจากหลักฐานในเซิร์ฟเวอร์ · ไม่ส่งข้อมูลไปยังผู้ให้บริการโมเดล'
-                  : `ส่งหลักฐานแบบนามแฝง ${disclosure.providerAttemptCount ?? 1} ครั้ง · ไม่ส่งชื่อ/รหัสจาก roster · รวมข้อความหลักฐาน ${(disclosure.byteCount / 1024).toFixed(1)} KB`}
-              </summary>
-              <p className="mt-1 leading-4 text-emerald-700">
-                บุคคลแบบนามแฝง {disclosure.subjectCount} ราย · ห้องแบบนามแฝง {disclosure.roomCount} ห้อง · {disclosure.metricCount ?? 0} ชุดข้อมูล ({disclosure.uniqueMetricCount ?? disclosure.metricCount ?? 0} ตัวชี้วัดไม่ซ้ำ) · {disclosure.evidencePointCount ?? disclosure.observedPointCount ?? 0} จุดหลักฐาน · สังเกตจริง {disclosure.observedPointCount ?? 0} จุด
-                {(disclosure.carriedForwardPointCount ?? 0) > 0
-                  ? ` · carried-forward ${disclosure.carriedForwardPointCount} จุด`
-                  : ''}
-                {(disclosure.forecastPointCount ?? 0) > 0
-                  ? ` · forecast ${disclosure.forecastPointCount} จุด`
-                  : ''}
-                {' · ไม่ส่งประวัติข้อความ'}
-                {redactionCount > 0
-                  ? ` · ปกปิดข้อมูลเพิ่ม ${redactionCount} รายการ`
-                  : ''}
-              </p>
-              {disclosure.coverage?.from && disclosure.coverage?.to && (
-                <p className="mt-1 leading-4 text-emerald-700">
-                  ช่วงหลักฐาน {disclosure.coverage.from} ถึง {disclosure.coverage.to}
-                </p>
-              )}
-            </details>
+            <DisclosureDetails disclosure={disclosure} redactionCount={redactionCount} />
           )}
         </div>
       </div>

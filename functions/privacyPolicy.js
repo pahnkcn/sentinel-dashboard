@@ -892,6 +892,125 @@ export function restoreProviderAliases(payload, request) {
   return createProviderAliasCodec(request).decode(payload);
 }
 
+const REFERENCE_SUMMARY_KEYS = Object.freeze([
+  'first',
+  'last',
+  'min',
+  'max',
+  'mean',
+  'change',
+  'slopePerWeek',
+  'fromWeek',
+  'toWeek',
+  'observedPoints',
+]);
+
+function referenceSummary(value) {
+  if (!isObject(value)) return null;
+  return Object.fromEntries(REFERENCE_SUMMARY_KEYS.flatMap(key => (
+    value[key] === null || Number.isFinite(value[key]) ? [[key, value[key]]] : []
+  )));
+}
+
+function referencePoint(point) {
+  return {
+    ...(typeof point.date === 'string' ? { date: point.date } : {}),
+    ...(Number.isInteger(point.week) ? { week: point.week } : {}),
+    ...(point.value === null || Number.isFinite(point.value) ? { value: point.value } : {}),
+    ...(point.carriedForward === true ? { carriedForward: true } : {}),
+    ...(Number.isInteger(point.sampleSize) ? { sampleSize: point.sampleSize } : {}),
+  };
+}
+
+function referenceMetric(metric) {
+  const points = Array.isArray(metric.points)
+    ? metric.points.map(referencePoint)
+    : null;
+  const trend = referenceSummary(metric.derived?.trend);
+  const windowSummaries = Array.isArray(metric.derived?.windowSummaries)
+    ? metric.derived.windowSummaries.map(referenceSummary).filter(Boolean)
+    : [];
+  const hasDerived = Boolean(trend) || windowSummaries.length > 0;
+  return {
+    metric: metric.metric,
+    representation: points
+      ? hasDerived ? 'points-and-derived' : 'points'
+      : hasDerived ? 'derived' : 'scalar',
+    ...(Object.hasOwn(metric, 'value') ? { value: metric.value } : {}),
+    ...(typeof metric.date === 'string' ? { date: metric.date } : {}),
+    ...(Number.isInteger(metric.week) ? { week: metric.week } : {}),
+    ...(metric.carriedForward === true ? { carriedForward: true } : {}),
+    ...(Number.isInteger(metric.rank) ? { rank: metric.rank } : {}),
+    ...(Number.isInteger(metric.sampleSize) ? { sampleSize: metric.sampleSize } : {}),
+    ...(points ? { points } : {}),
+    ...(hasDerived ? {
+      derived: {
+        ...(trend ? { trend } : {}),
+        ...(windowSummaries.length > 0 ? { windowSummaries } : {}),
+      },
+    } : {}),
+  };
+}
+
+function referenceEntities(evidence) {
+  return [
+    ...(evidence.metrics?.length > 0 ? [{
+      scope: 'overview',
+      sampleSize: evidence.coverage?.populationSize ?? evidence.coverage?.totalSubjects ?? null,
+      metrics: evidence.metrics,
+    }] : []),
+    ...(evidence.subjects ?? []).map(subject => ({
+      scope: 'subject',
+      alias: subject.alias,
+      sampleSize: subject.sampleSize ?? null,
+      metrics: subject.metrics,
+    })),
+    ...(evidence.rooms ?? []).map(room => ({
+      scope: 'room',
+      alias: room.alias,
+      sampleSize: room.sampleSize ?? null,
+      metrics: room.metrics,
+    })),
+  ].map(entity => ({
+    scope: entity.scope,
+    ...(entity.alias ? { alias: entity.alias } : {}),
+    ...(Number.isInteger(entity.sampleSize) ? { sampleSize: entity.sampleSize } : {}),
+    metrics: entity.metrics.map(referenceMetric),
+  }));
+}
+
+function providerEvidenceFromMessages(providerMessages, request) {
+  const evidenceMessage = providerMessages.find(message => (
+    message?.role === 'system'
+    && typeof message.content === 'string'
+    && message.content.startsWith('MINIMIZED_EVIDENCE\n')
+  ));
+  if (!evidenceMessage) return null;
+  try {
+    const providerEvidence = JSON.parse(evidenceMessage.content.slice('MINIMIZED_EVIDENCE\n'.length));
+    return restoreProviderAliases(providerEvidence, request);
+  } catch {
+    return null;
+  }
+}
+
+function createReferenceDetails({ request, providerMessages, providerEgress }) {
+  const referencedEvidence = providerEgress
+    ? providerEvidenceFromMessages(providerMessages, request)
+    : request.evidence;
+  if (!referencedEvidence) return null;
+  return {
+    source: providerEgress ? 'model-provider' : 'server-local',
+    operation: request.analysisRequest.operation,
+    scope: request.analysisRequest.scope,
+    statistic: request.analysisRequest.statistic,
+    time: request.analysisRequest.time,
+    entities: referenceEntities(referencedEvidence),
+    constraints: [...request.evidence.constraints],
+    omittedFields: [...request.evidence.disclosure.omittedFields],
+  };
+}
+
 export function createDisclosureReceipt({
   request,
   providerMessages,
@@ -943,6 +1062,11 @@ export function createDisclosureReceipt({
     evidenceMessageByteCount,
     byteCount: evidenceMessageByteCount * providerAttemptCount,
     omittedFields: request.evidence.disclosure.omittedFields,
+    referenceDetails: createReferenceDetails({
+      request,
+      providerMessages,
+      providerEgress,
+    }),
   };
 }
 

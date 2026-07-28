@@ -93,11 +93,46 @@ test('semantic memory keeps no more than two deidentified exchanges', () => {
 });
 
 test('disclosure receipt reports the serialized outbound payload', () => {
-  const evidence = { subjects: [{ alias: '[[P1]]' }], rooms: [] };
-  const body = { model: 'model', utterance: 'ดู [[P1]]', conversationState: {}, evidence };
+  const evidence = {
+    metrics: [],
+    subjects: [{
+      alias: '[[P1]]',
+      metrics: [{
+        metric: 'self',
+        points: [
+          { week: 1, value: 2 },
+          { week: 2, value: 3, carriedForward: true },
+        ],
+      }],
+    }],
+    rooms: [],
+    constraints: ['verified-data-only'],
+    disclosure: { omittedFields: ['names', 'student-ids'] },
+  };
+  const body = {
+    model: 'model',
+    utterance: 'ดู [[P1]]',
+    conversationState: {},
+    analysisRequest: {
+      operation: 'trend',
+      scope: 'subject',
+      statistic: 'trend',
+      time: { mode: 'available_range', windows: [] },
+    },
+    evidence,
+  };
   const receipt = createDisclosureReceipt({ body, evidence, redactions: ['email'] });
 
   assert.equal(receipt.subjectCount, 1);
   assert.equal(receipt.rawIdentifiersSent, false);
   assert.ok(receipt.byteCount > 0);
+  assert.equal(receipt.referenceDetails.source, 'gateway-request');
+  assert.equal(receipt.referenceDetails.operation, 'trend');
+  assert.equal(receipt.referenceDetails.entities[0].alias, '[[P1]]');
+  assert.equal(receipt.referenceDetails.entities[0].metrics[0].representation, 'points');
+  assert.deepEqual(receipt.referenceDetails.entities[0].metrics[0].points, [
+    { week: 1, value: 2 },
+    { week: 2, value: 3, carriedForward: true },
+  ]);
+  assert.deepEqual(receipt.referenceDetails.omittedFields, ['names', 'student-ids']);
 });

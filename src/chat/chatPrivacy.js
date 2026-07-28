@@ -318,6 +318,49 @@ export function createConversationPrivacy() {
 
 export function createDisclosureReceipt({ body, evidence, redactions = [] }) {
   const byteCount = new TextEncoder().encode(JSON.stringify(body)).byteLength;
+  const referenceMetric = metric => ({
+    metric: metric.metric,
+    representation: Array.isArray(metric.points) ? 'points' : 'scalar',
+    ...(Object.hasOwn(metric, 'value') ? { value: metric.value } : {}),
+    ...(typeof metric.date === 'string' ? { date: metric.date } : {}),
+    ...(Number.isInteger(metric.week) ? { week: metric.week } : {}),
+    ...(metric.carriedForward === true ? { carriedForward: true } : {}),
+    ...(Number.isInteger(metric.rank) ? { rank: metric.rank } : {}),
+    ...(Number.isInteger(metric.sampleSize) ? { sampleSize: metric.sampleSize } : {}),
+    ...(Array.isArray(metric.points) ? {
+      points: metric.points.map(point => ({
+        ...(typeof point.date === 'string' ? { date: point.date } : {}),
+        ...(Number.isInteger(point.week) ? { week: point.week } : {}),
+        ...(point.value === null || Number.isFinite(point.value) ? { value: point.value } : {}),
+        ...(point.carriedForward === true ? { carriedForward: true } : {}),
+        ...(Number.isInteger(point.sampleSize) ? { sampleSize: point.sampleSize } : {}),
+      })),
+    } : {}),
+  });
+  const referenceEntities = [
+    ...(evidence.metrics?.length > 0 ? [{
+      scope: 'overview',
+      sampleSize: evidence.coverage?.totalSubjects ?? null,
+      metrics: evidence.metrics,
+    }] : []),
+    ...(evidence.subjects ?? []).map(subject => ({
+      scope: 'subject',
+      alias: subject.alias,
+      sampleSize: subject.sampleSize ?? null,
+      metrics: subject.metrics,
+    })),
+    ...(evidence.rooms ?? []).map(room => ({
+      scope: 'room',
+      alias: room.alias,
+      sampleSize: room.sampleSize ?? null,
+      metrics: room.metrics,
+    })),
+  ].map(entity => ({
+    scope: entity.scope,
+    ...(entity.alias ? { alias: entity.alias } : {}),
+    ...(Number.isInteger(entity.sampleSize) ? { sampleSize: entity.sampleSize } : {}),
+    metrics: entity.metrics.map(referenceMetric),
+  }));
   return {
     mode: 'deidentified',
     subjectCount: evidence.subjects.length,
@@ -326,5 +369,15 @@ export function createDisclosureReceipt({ body, evidence, redactions = [] }) {
     rawIdentifiersSent: false,
     redactions: [...new Set(redactions)],
     byteCount,
+    referenceDetails: {
+      source: 'gateway-request',
+      operation: body.analysisRequest?.operation ?? null,
+      scope: body.analysisRequest?.scope ?? null,
+      statistic: body.analysisRequest?.statistic ?? null,
+      time: body.analysisRequest?.time ?? null,
+      entities: referenceEntities,
+      constraints: [...(evidence.constraints ?? [])],
+      omittedFields: [...(evidence.disclosure?.omittedFields ?? [])],
+    },
   };
 }

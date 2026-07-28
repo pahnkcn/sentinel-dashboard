@@ -120,6 +120,19 @@ test('accepts a strict alias-only evidence request and builds bounded provider m
   assert.equal(receipt.byteCount, receipt.evidenceMessageByteCount);
   assert.equal(receipt.redactionCount, 2);
   assert.ok(receipt.byteCount > 0);
+  assert.equal(receipt.referenceDetails.source, 'model-provider');
+  assert.equal(receipt.referenceDetails.operation, 'trend');
+  assert.equal(receipt.referenceDetails.entities[0].scope, 'subject');
+  assert.equal(receipt.referenceDetails.entities[0].alias, '[[P1]]');
+  assert.equal(receipt.referenceDetails.entities[0].metrics[0].representation, 'points-and-derived');
+  assert.deepEqual(
+    receipt.referenceDetails.entities[0].metrics[0].points.map(point => point.value),
+    [2, 3],
+  );
+  assert.doesNotMatch(
+    JSON.stringify(receipt.referenceDetails),
+    /datasetVersion|evidenceId|SUBJECT_ALIAS/u,
+  );
 
   const localReceipt = createDisclosureReceipt({
     request: result.value,
@@ -129,6 +142,8 @@ test('accepts a strict alias-only evidence request and builds bounded provider m
   assert.equal(localReceipt.mode, 'local-only');
   assert.equal(localReceipt.providerEgress, false);
   assert.equal(localReceipt.byteCount, 0);
+  assert.equal(localReceipt.referenceDetails.source, 'server-local');
+  assert.equal(localReceipt.referenceDetails.entities[0].metrics[0].representation, 'points');
 
   const retriedReceipt = createDisclosureReceipt({
     request: result.value,
@@ -530,10 +545,11 @@ test('historical AI summaries send derived statistics without raw weekly points'
 
   const validated = validatePrivacyChatRequest(candidate);
   assert.equal(validated.ok, true, validated.code);
-  const providerMetric = providerEvidence(buildProviderMessages({
+  const messages = buildProviderMessages({
     systemPrompt: 'system',
     request: validated.value,
-  })).subjects[0].metrics[0];
+  });
+  const providerMetric = providerEvidence(messages).subjects[0].metrics[0];
 
   assert.equal(providerMetric.points, undefined);
   assert.deepEqual(providerMetric.derived.trend, {
@@ -548,6 +564,15 @@ test('historical AI summaries send derived statistics without raw weekly points'
     toWeek: 2,
     observedPoints: 2,
   });
+
+  const receipt = createDisclosureReceipt({
+    request: validated.value,
+    providerMessages: messages,
+  });
+  const referencedMetric = receipt.referenceDetails.entities[0].metrics[0];
+  assert.equal(referencedMetric.representation, 'derived');
+  assert.equal(referencedMetric.points, undefined);
+  assert.equal(referencedMetric.derived.trend.mean, 2.5);
 });
 
 test('latest AI summaries also send derived statistics without raw weekly points', () => {

@@ -3,27 +3,14 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "engines": {
-    "node": "22.x"
-  },
   "scripts": {
     "dev": "vite",
-    "dev:vercel": "vercel dev",
-    "emulators": "npx --yes firebase-tools@14.23.0 emulators:start --only firestore --project demo-sentinel-dashboard",
-    "emulators:seed": "node scripts/seed-emulators.mjs",
-    "demo:generate": "node scripts/generate-demo-data.mjs",
-    "demo:publish": "node scripts/publish-demo-data.mjs",
-    "auth:provision": "node scripts/provision-authorized-user.mjs",
     "build": "vite build",
-    "vercel:build": "vercel build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "test": "npm run test:unit",
-    "test:unit": "node --test server/*.test.js server/chat/*.test.js scripts/*.test.js src/auth/*.test.js src/chat/*.test.js src/config/*.test.js src/data/*.test.js src/domain/*.test.js src/ui/*.test.js",
-    "test:rules": "npx --yes firebase-tools@14.23.0 emulators:exec --only firestore \"node --test test/firestore.rules.test.js\""
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@lobehub/icons-static-avatar": "1.13.0",
+    "firebase": "^12.13.0",
     "lucide-react": "^1.14.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
@@ -31,7 +18,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -39,13 +25,9 @@
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
-    "exceljs": "^4.4.0",
-    "firebase": "^12.13.0",
     "globals": "^17.5.0",
-    "google-auth-library": "^10.9.1",
     "postcss": "^8.5.14",
     "tailwindcss": "^3.4.19",
-    "vercel": "^58.0.0",
     "vite": "^8.0.10"
   }
 }

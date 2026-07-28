@@ -11,19 +11,6 @@ node_modules
 dist
 dist-ssr
 *.local
-.generated/
-
-# Local environment overrides
-.env
-.env.*
-!.env.example
-!.env.development.example
-
-# Firebase local cache
-.firebase/
-
-# Graphify generated artifacts
-graphify-out/
 
 # Editor directories and files
 .vscode/*

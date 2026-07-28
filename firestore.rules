@@ -2,30 +2,6 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function hasVerifiedClinicalRole() {
-      return request.auth != null
-        && request.auth.token.email_verified == true
-        && request.auth.token.sentinelRole in ['clinician', 'admin'];
-    }
-
-    function isCurrentDataset(datasetVersion) {
-      return datasetVersion
-        == get(/databases/$(database)/documents/monitoringManifests/current).data.version;
-    }
-
-    match /monitoringManifests/{manifestId} {
-      allow get: if manifestId == 'current' && hasVerifiedClinicalRole();
-      allow list: if false;
-      allow write: if false;
-    }
-
-    match /monitoringDatasets/{datasetVersion}/{streamName}/{recordId} {
-      allow read: if hasVerifiedClinicalRole()
-        && streamName in ['students', 'logs', 'assessments']
-        && isCurrentDataset(datasetVersion);
-      allow write: if false;
-    }
-
     match /{document=**} {
       allow read, write: if false;
     }

@@ -1,17 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  GoogleAuthProvider,
-  onIdTokenChanged,
-  signInWithPopup,
-  signOut as firebaseSignOut,
-} from 'firebase/auth';
 
-import { auth } from '../config/firebase.js';
 import { getPublicAuthErrorCode, getPublicAuthMessage } from './authErrors.js';
-import { getAuthorizedRole } from './roles.js';
-
-const provider = new GoogleAuthProvider();
-provider.setCustomParameters({ prompt: 'select_account' });
+import {
+  AUTH_SESSION_INVALID_EVENT,
+  destroyAuthSession,
+  exchangeGoogleCredential,
+  fetchAuthSession,
+} from './authSession.js';
 
 const INITIAL_STATE = Object.freeze({
   status: 'loading',
@@ -24,74 +19,61 @@ function reportAuthFailure(context, error) {
   console.error(`${context}: ${getPublicAuthErrorCode(error)}`);
 }
 
+function authorizedState(session) {
+  return {
+    status: 'authorized',
+    user: session.user,
+    role: session.role,
+    message: null,
+  };
+}
+
 export function useAuthorization() {
   const [state, setState] = useState(INITIAL_STATE);
 
   useEffect(() => {
+    const controller = new AbortController();
     let active = true;
-    let tokenSequence = 0;
 
-    const unsubscribe = onIdTokenChanged(
-      auth,
-      async user => {
-        const sequence = ++tokenSequence;
-
-        if (!user) {
-          if (active) setState({ status: 'signed-out', user: null, role: null, message: null });
-          return;
-        }
-
-        try {
-          const token = await user.getIdTokenResult();
-          if (!active || sequence !== tokenSequence) return;
-
-          const role = getAuthorizedRole(token.claims);
-          setState(role
-            ? { status: 'authorized', user, role, message: null }
-            : {
-                status: 'unauthorized',
-                user,
-                role: null,
-                message: 'บัญชีนี้ยังไม่ได้รับสิทธิ์ clinician หรือ admin',
-              });
-        } catch (error) {
-          if (!active || sequence !== tokenSequence) return;
-          reportAuthFailure('Authorization check failed', error);
-          setState({
-            status: 'error',
-            user,
-            role: null,
-            message: getPublicAuthMessage(error),
-          });
-        }
-      },
-      error => {
+    fetchAuthSession({ signal: controller.signal })
+      .then(session => {
         if (!active) return;
-        reportAuthFailure('Authentication observer failed', error);
+        setState(session
+          ? authorizedState(session)
+          : { status: 'signed-out', user: null, role: null, message: null });
+      })
+      .catch(error => {
+        if (!active || error?.name === 'AbortError') return;
+        reportAuthFailure('Session check failed', error);
         setState({
           status: 'error',
           user: null,
           role: null,
           message: getPublicAuthMessage(error),
         });
-      },
-    );
+      });
+
+    const handleInvalidSession = () => {
+      if (active) setState({ status: 'signed-out', user: null, role: null, message: null });
+    };
+    window.addEventListener(AUTH_SESSION_INVALID_EVENT, handleInvalidSession);
 
     return () => {
       active = false;
-      tokenSequence += 1;
-      unsubscribe();
+      controller.abort();
+      window.removeEventListener(AUTH_SESSION_INVALID_EVENT, handleInvalidSession);
     };
   }, []);
 
-  const signIn = useCallback(async () => {
+  const signIn = useCallback(async credential => {
     setState(current => ({ ...current, status: 'authenticating', message: null }));
     try {
-      await signInWithPopup(auth, provider);
+      const session = await exchangeGoogleCredential(credential);
+      setState(authorizedState(session));
     } catch (error) {
       reportAuthFailure('Sign-in failed', error);
       setState({
-        status: 'signed-out',
+        status: error?.status === 403 ? 'unauthorized' : 'signed-out',
         user: null,
         role: null,
         message: getPublicAuthMessage(error),
@@ -101,7 +83,8 @@ export function useAuthorization() {
 
   const signOut = useCallback(async () => {
     try {
-      await firebaseSignOut(auth);
+      await destroyAuthSession();
+      setState({ status: 'signed-out', user: null, role: null, message: null });
     } catch (error) {
       reportAuthFailure('Sign-out failed', error);
       setState(current => ({

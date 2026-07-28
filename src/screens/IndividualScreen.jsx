@@ -176,7 +176,7 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <section className="min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6">
               <h4 className="mb-6 flex items-center font-bold text-slate-800">
-                <ShieldCheck size={18} className="mr-2 text-rose-500" /> DASS-21
+                <ShieldCheck size={18} className="mr-2 text-rose-500" /> DASS-21 (คะแนนดิบ 0–21)
               </h4>
               {loading.assessments ? <Skeleton className="h-56" /> : (
                 <div className="h-56 w-full min-w-0">
@@ -184,7 +184,7 @@ export const IndividualScreen = memo(function IndividualScreen({ analytics, load
                     <LineChart data={individual.assessments} margin={{ top: 5, right: 8, left: -16, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="week" tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={18} tickFormatter={WeekTick} />
-                      <YAxis width={32} domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} />
+                      <YAxis width={32} domain={[0, 21]} ticks={[0, 7, 14, 21]} />
                       <RechartsTooltip />
                       <Line type="monotone" dataKey="dass_d" name="D" stroke="#3b82f6" strokeWidth={3} />
                       <Line type="monotone" dataKey="dass_a" name="A" stroke="#f59e0b" strokeWidth={3} />

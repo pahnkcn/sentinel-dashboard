@@ -3,8 +3,9 @@
 ## Scope
 
 Sentinel is a read-only staff dashboard for monitoring mental-health and
-physical-wellbeing observations during a 16-week training period. It is not a
-data-entry or fixture-generation tool.
+physical-wellbeing observations during a 16-week training period. The runtime
+is not a data-entry tool; synthetic fixture generation is a separate local-only
+operator workflow.
 
 ## Domain vocabulary
 
@@ -39,10 +40,13 @@ data-entry or fixture-generation tool.
 - Daily-observation dates use strict `YYYY-MM-DD` calendar dates.
 - Training weeks are integers from `0` through `16`; daily observations use
   weeks `1` through `16`.
-- Self, Buddy, and Command values are integers from `1` through `4`; Buddy and
-  Command may be null before LOCF is applied.
-- Physical-injury and mental-severity values are integers from `1` through `3`.
-- DASS-21 dimension values are numbers from `1` through `5`.
+- Self, Buddy, and Command values are integers from `1` through `4` when
+  observed; each may be null, but a log must contain at least one observed
+  channel or physical-injury value. `selfObservedAt` is an ISO timestamp when
+  Self is present.
+- Physical-injury is nullable and mental-severity values are integers from `1`
+  through `3`. Physical injury is never carried forward.
+- DASS-21 dimension values are raw integer scores from `0` through `21`.
 - CD-RISC values are numbers from `0` through `40`.
 - GRIT values are numbers from `0` through `32`.
 - DASS-21 is scheduled for weeks `0`, `4`, `8`, and `16`; CD-RISC and GRIT are
@@ -52,9 +56,12 @@ data-entry or fixture-generation tool.
 
 - Names, IDs, rooms, demographics, health details, scores, and drawing notes
   are sensitive data.
-- Browser data is untrusted even after Firestore Security Rules authorize a
-  read. Records must be decoded before they reach analytics or presentation.
-- The dashboard never grants client-side writes. Administrative imports belong
-  in separately authorized server-side tooling with audit logs and backups.
-- Authentication identifies a staff member; Firestore rules remain the
-  authorization source of truth.
+- Browser and API data remain untrusted and must be decoded before analytics or
+  presentation.
+- Firestore Security Rules deny every browser read and write. Vercel Functions
+  read through a short-lived OIDC-federated service account with
+  `roles/datastore.viewer`.
+- Google Identity Services identifies staff; the server-side Firestore
+  allowlist and signed session cookie authorize same-origin API access.
+- Administrative imports use separate operator ADC, dry-run by default, with
+  audit logs and backups. The Vercel runtime identity cannot write.

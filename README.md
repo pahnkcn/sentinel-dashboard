@@ -1,177 +1,144 @@
 # Sentinel Dashboard
 
-Sentinel is a read-only staff dashboard for monitoring sensitive mental-health
-and physical-wellbeing observations during a 16-week training period. It
-provides population trends, room status, and individual follow-up views. It is
-decision support, not a diagnostic or data-entry system.
+Sentinel is a read-only wellbeing-monitoring dashboard. This deployment profile
+uses Vercel for the Vite SPA and all same-origin API routes. Firebase is used
+only for Cloud Firestore storage; the browser never loads the Firebase SDK and
+Firestore Security Rules deny every client read and write.
 
-Access is restricted to verified Firebase Authentication users whose ID token
-contains `sentinelRole: "clinician"` or `sentinelRole: "admin"`. Firestore
-Security Rules are the authorization boundary; the browser is never allowed to
-write monitoring records. Authentication uses tab-scoped session persistence,
-so closing the tab or browser clears the saved sign-in state.
+> **Demo restriction:** Vercel Hobby is for personal, non-commercial use. This
+> repository's Hobby deployment must contain synthetic data only. It is not an
+> approved clinical or production hosting profile.
 
-## Requirements
+## Runtime overview
 
-- Node.js `^20.19.0` or `>=22.12.0`
-- npm
-- Java 21 recommended for the Firestore Emulator
-- A Firebase web app with Google sign-in enabled
-- An OpenRouter API key for Sentinel Analyst
+- Google Identity Services (GIS) supplies an ID token to `POST /api/auth/login`.
+- The server verifies GIS CSRF and token claims, checks
+  `authorizedUsers/{sha256(normalizedEmail)}`, and issues an HttpOnly
+  browser-session cookie.
+- Vercel Functions exchange Vercel OIDC for short-lived Google credentials and
+  read Firestore through the REST API with `roles/datastore.viewer` only.
+- The browser loads `/api/manifest`, then the paginated `students`, `logs`, and
+  `assessments` streams. It checks the manifest again before publishing one
+  complete version to the UI. Data loads on entry and explicit refresh only;
+  there is no background polling.
+- `/api/chat` keeps the existing privacy envelope and server-side OpenRouter
+  boundary. No provider key is present in browser code.
 
-## Local setup
+See [architecture](docs/architecture.md), [security](docs/security.md), and the
+[deployment runbook](docs/deployment.md) for the full design.
 
-Local development is emulator-only. The development template uses a demo
-project ID and cannot connect to a remote Firebase project. The guard uses the
-actual Vite dev-server command, not the selectable mode name, so
-`npm run dev -- --mode production` stops before serving.
+## Local development
 
-```sh
+Requirements: Node.js 22.x, a Google OAuth web client for localhost, Java for the
+Firestore Emulator, and Application Default Credentials only when testing
+operator writes against a remote project.
+
+```powershell
 npm ci
-npm ci --prefix functions
-cp .env.development.example .env.development.local
-cp functions/.secret.local.example functions/.secret.local
-cp functions/.env.local.example functions/.env.local
+Copy-Item .env.development.example .env.local
+npx vercel link
+npx vercel pull --yes --environment=development
 npm run emulators
 ```
 
-In a second terminal:
+In another terminal:
 
 ```sh
-npm run emulators:seed
-npm run dev
+npm run emulators:seed -- --end-date 2026-07-28
+npm run auth:provision -- --email clinician@example.com --role clinician --project-id demo-sentinel-dashboard --emulator-host 127.0.0.1:8080 --commit
+npm run dev:vercel
 ```
 
-The local seed publishes a large synthetic load-test dataset with 250 students
-across 25 rooms, 16 weekly observations per student, and assessments at weeks
-0, 4, 8, and 16 (5,250 records total). The 16-week observation window ends on
-the local date when the seed command runs, so mock data stays current. Each run
-publishes a fresh immutable dataset version, and the manifest switches only
-after all records have been written. This seed remains restricted to the
-loopback-only `demo-*` emulator.
+The emulator guard accepts only a loopback host and a Firebase project ID that
+starts with `demo-`. Local seed records are synthetic schema v2 records.
+Use an email that belongs to the localhost Google OAuth client test users.
 
-Use the Auth Emulator UI or separately controlled Admin SDK tooling connected
-to the emulator to create a verified test user with
-`sentinelRole: "clinician"` or `"admin"`. The seed command writes a bounded,
-synthetic dataset through the loopback-only emulator REST API. It refuses
-non-`demo-*` projects and non-loopback hosts; it is not included in the browser
-client and cannot write to a remote Firebase project.
+## Environment
 
-Set the real local-only OpenRouter key in `functions/.secret.local`. The
-browser calls the Functions emulator through Vite's same-origin `/api/chat`
-proxy, so the key is never embedded in browser JavaScript.
+Copy `.env.example` into Vercel project settings, not into source control.
 
-Remote builds use `.env.example` as a template. Every placeholder must be
-replaced, `VITE_FIREBASE_USE_EMULATORS` must be `false`, and an App Check site
-key is required. The build fails before bundling when configuration is missing
-or incoherent.
+- `VITE_GOOGLE_CLIENT_ID` is the only browser-exposed provider value.
+- `GOOGLE_CLIENT_ID` and `SESSION_SECRET` are server-only.
+- `GCP_PROJECT_ID`, `GCP_PROJECT_NUMBER`, `GCP_SERVICE_ACCOUNT_EMAIL`,
+  `GCP_WORKLOAD_IDENTITY_POOL_ID`, and
+  `GCP_WORKLOAD_IDENTITY_PROVIDER_ID` configure keyless OIDC federation.
+- `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, and `OPENROUTER_SITE_URL` are
+  server-only. Store the key as an encrypted Vercel environment variable.
+- `VERCEL_OIDC_TOKEN` is issued by Vercel; never enter or persist it manually.
 
-Firebase web configuration is public application metadata, not a server
-secret. Restrict the associated API key to the approved browser origins and
-required APIs in Google Cloud. Never place Admin SDK credentials or service
-account keys in a `VITE_*` variable.
+Do not add `VITE_FIREBASE_*`, a Firebase service-account key, or any server
+secret to a Vite-prefixed variable.
 
-An account can open the dashboard only after its email is verified and an
-administrator provisions the required custom claim. See
-[Deployment](docs/deployment.md) for claim and App Check setup.
+## Synthetic workbook workflow
 
-## Verification commands
+The source workbook remains outside the repository and is opened read-only.
+The profiler retains only aggregate counts, score distributions, missingness,
+and quality totals. It never writes source names, identifiers, rooms, dates, or
+per-person trajectories.
 
-| Command | Purpose |
-| --- | --- |
-| `npm run emulators` | Start local Auth and Firestore emulators using the safe demo project |
-| `npm run emulators:seed` | Publish synthetic local data to the running Firestore emulator |
-| `npm test` | Unit tests for auth, hosting policy, decoding, data lifecycle, and analytics |
-| `npm run test:rules` | Firestore rules integration tests in the emulator |
-| `npm run lint` | ESLint checks |
-| `npm run build` | Production build and code-splitting verification |
-| `npm run preview` | Serve the production build locally |
+Generate deterministic demo data relative to an explicit end date:
 
-The emulator commands use a pinned Firebase CLI and may download it on the
-first run.
+```sh
+npm run demo:generate -- \
+  --workbook "C:\path\to\trusted-workbook.xlsx" \
+  --end-date 2026-07-28 \
+  --seed reviewed-demo-v2 \
+  --output .generated/sentinel-demo.json \
+  --profile-output .generated/workbook-profile.json
+```
 
-## Versioned datasets
+Use `--default-profile` instead of `--workbook` when no source workbook is
+available. Generated files are ignored by Git. Review the aggregate quality
+report and synthetic output before publishing.
 
-The browser first reads the exact `monitoringManifests/current` document. Its
-safe `version` selects three bounded collections under one immutable scope:
+Publishing is a dry-run unless `--commit` is present:
 
-- `monitoringDatasets/{version}/students`
-- `monitoringDatasets/{version}/logs`
-- `monitoringDatasets/{version}/assessments`
+```sh
+npm run demo:publish -- \
+  --dataset .generated/sentinel-demo.json \
+  --project-id YOUR_EXPLICIT_PROJECT_ID \
+  --version demo-2026-07-28
 
-Records are decoded into strict known-field shapes before analytics can see
-them. The data Module buffers all three server-confirmed streams and replaces
-application state only after the complete version is available. Invalid,
-truncated, mixed, or same-version-mutated datasets pause all analytics rather
-than presenting partial results.
+npm run demo:publish -- \
+  --dataset .generated/sentinel-demo.json \
+  --project-id YOUR_EXPLICIT_PROJECT_ID \
+  --version demo-2026-07-28 \
+  --commit
+```
 
-Cache-only snapshots and snapshots with pending local writes never enter
-application state: the manifest and every stream must be confirmed by the
-Firestore server with no uncommitted overlay. A later unverified transition
-pauses analytics. The displayed last-verified time is when the complete
-dataset became verified, not an independent heartbeat or the age of the
-source observations. Domain terms, ranges, scheduled weeks, and LOCF rules are
-in [CONTEXT.md](CONTEXT.md).
+The publisher uses operator ADC, creates immutable versioned records with an
+`exists: false` precondition, and changes `monitoringManifests/current` only
+after every record batch succeeds. Vercel's runtime service account cannot run
+this operation.
 
-## Architecture and operations
+Provision or disable an allowlisted user with the same dry-run-first behavior:
 
-- [Architecture](docs/architecture.md)
-- [Security model](docs/security.md)
-- [Deployment runbook](docs/deployment.md)
-- [Architecture decision records](docs/adr/)
+```sh
+npm run auth:provision -- \
+  --email clinician@example.com \
+  --role clinician \
+  --project-id YOUR_EXPLICIT_PROJECT_ID
 
-## Sentinel Analyst
+npm run auth:provision -- \
+  --email clinician@example.com \
+  --role clinician \
+  --project-id YOUR_EXPLICIT_PROJECT_ID \
+  --commit
+```
 
-The floating assistant appears only after an authorized user opens the
-dashboard. It works from the same verified, fail-closed dataset as the three
-workflow screens. Before a request leaves Firebase, the browser replaces known
-student and room identifiers with conversation-scoped aliases and builds a
-strict, question-specific evidence envelope. Aggregate series require at least
-five contributors; ranking is capped at five aliases; individual comparisons
-are capped at three; and free-text notes, names, IDs, demographics, raw records,
-and the full transcript are excluded. The user can choose
-GLM 5.2, Qwen 3.7 Plus, MiMo V2.5, DeepSeek V4 Pro, MiniMax M3, or Kimi K2.7
-Code. The selected OpenRouter model receives only a canonical intent, enumerated
-semantic state, and minimized evidence. The natural-language question, prior
-free-form turns, and internal dataset label are not forwarded to the provider.
-The model returns a strict structured response for validated text, tables, and
-Recharts visualizations. The UI restores aliases locally and shows a
-per-response disclosure receipt. Each receipt can be expanded to inspect the
-exact alias-only metrics, scalar values, time points, or server-derived
-statistics referenced by that response, together with the fields that were
-withheld. Latest lookups and counts, bounded latest
-comparisons, window means, supplied or unavailable forecasts, non-causal trend
-explanations, high-dimensional trend tables, and evidence-ordered rankings are
-answered deterministically inside the Function when no model synthesis is
-needed. Those responses report `providerEgress: false`, zero provider bytes,
-and zero model tokens. An explicitly requested historical narrative can use the
-model, but weekly points are replaced by server-computed first/last/min/max,
-mean/change/slope and point counts before egress. Exploratory predictions use a
-bounded linear trend and are always labeled as decision support rather than
-diagnosis.
+Use `--disable --commit` to revoke access without deleting the audit-visible
+allowlist document.
 
-OpenRouter is called only from the authenticated Cloud Function. Every remote
-request requires a verified Firebase ID token, an allowed clinical role, and a
-valid App Check token. The Function rejects the former arbitrary `context` and
-`messages` payloads, validates exact evidence fields and privacy budgets, checks
-the current manifest and authoritative student roster, redacts any remaining
-known name/ID/room, removes free-form text and the dataset label from the
-provider request, remaps browser aliases to provider-only aliases, and scans the
-final provider body against the authoritative roster before egress. Provider
-aliases are mapped back locally at the Function boundary. Requests
-require structured-output support, disallow data-collecting providers, and
-enforce a Zero Data Retention endpoint. No stable user identifier is forwarded
-to the model provider. A 30-request endpoint bucket protects Auth, validation,
-and roster work while a separate eight-request provider bucket does not charge
-local-only answers. Model summaries make one bounded transport attempt and use
-a visibly labeled deterministic evidence fallback on timeout or provider
-failure; invalid structured output may be retried once. Numeric grounding and
-canonical table/chart guards replace ungrounded model facts. Billing exhaustion
-is never retried or hidden by fallback and is returned as
-`chat-credit-exhausted`.
+## Verification
 
-Administrative imports and fixture generation deliberately do not exist in
-this client. Put those operations in separately authorized server-side tooling
-with audit logs and backups. Stage a new immutable version, validate all three
-collections, and change `monitoringManifests/current` only as the final publish
-operation; see the [deployment runbook](docs/deployment.md).
+```sh
+npm test
+npm run test:rules
+npm run lint
+npm run build
+npm run vercel:build
+```
+
+Rules tests require the Firestore emulator. Deployment acceptance also includes
+an `npm run dev:vercel` smoke test after `vercel link`/`vercel pull` and the
+checks in the deployment runbook.

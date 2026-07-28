@@ -10,7 +10,6 @@ import {
   Users,
 } from 'lucide-react';
 
-import { firebaseConfig, useEmulators } from './config/firebase.js';
 import { getMonitoringFailurePresentation } from './data/monitoringFailurePresentation.js';
 import { canPresentMonitoringAnalytics } from './data/presentationPolicy.js';
 import { retryMonitoringData, useMonitoringData } from './data/useMonitoringData.js';
@@ -85,6 +84,7 @@ export default function Dashboard({ authorization }) {
     issueCount: invalidRecordCount,
     status: dataStatus,
     datasetVersion,
+    dataClassification,
     truncatedStreams,
     lastUpdatedAt,
     errors,
@@ -100,7 +100,7 @@ export default function Dashboard({ authorization }) {
   const dataPending = dataStatus === 'idle' || dataStatus === 'connecting';
   const analyticsAllowed = canPresentMonitoringAnalytics(dataStatus);
   const failurePresentation = dataStatus === 'error'
-    ? getMonitoringFailurePresentation(errors, { useEmulators })
+    ? getMonitoringFailurePresentation(errors)
     : null;
   const activeWorkflow = WORKFLOWS[activeTab];
   const ActiveScreen = activeWorkflow.Screen;
@@ -178,6 +178,10 @@ export default function Dashboard({ authorization }) {
       </aside>
 
       <div className="min-w-0 flex-1 overflow-x-hidden bg-[#f8fafc] p-3 pb-8 sm:p-6 lg:p-12">
+        <div role="note" className="mb-6 flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-bold text-sky-900">
+          <ShieldCheck className="flex-shrink-0 text-sky-600" size={20} />
+          <span>ข้อมูลสังเคราะห์สำหรับสาธิตเท่านั้น · ไม่ใช่ข้อมูลผู้รับบริการจริง</span>
+        </div>
         {dataStatus === 'error' && (
           <div role="alert" className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-900">
             <p className="font-bold">{failurePresentation.title}</p>
@@ -211,7 +215,7 @@ export default function Dashboard({ authorization }) {
           </div>
         )}
 
-        <header className="mb-6 flex items-end justify-between sm:mb-8 lg:mb-12">
+        <header className="mb-6 flex items-end justify-between gap-4 sm:mb-8 lg:mb-12">
           <div className="min-w-0">
             <h2 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl lg:text-4xl">
               {activeWorkflow.title}
@@ -220,11 +224,20 @@ export default function Dashboard({ authorization }) {
               <Clock size={16} className="mr-2 mt-0.5 flex-shrink-0 sm:mt-0" />
               <span className="min-w-0 break-words">
                 {dataStatus === 'ready'
-                  ? `verified sync from ${firebaseConfig.projectId} · ${lastSyncLabel}`
+                  ? `verified ${dataClassification} dataset ${datasetVersion} · ${lastSyncLabel}`
                   : `sync status: ${dataStatusLabel}`}
               </span>
             </p>
           </div>
+          <button
+            type="button"
+            onClick={retryMonitoringData}
+            disabled={dataPending}
+            className="inline-flex flex-shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 shadow-sm transition hover:border-blue-300 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:cursor-wait disabled:opacity-60 sm:px-4"
+          >
+            <RotateCw size={16} className={dataPending ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">รีเฟรชข้อมูล</span>
+          </button>
         </header>
 
         <main className="mx-auto w-full max-w-7xl">

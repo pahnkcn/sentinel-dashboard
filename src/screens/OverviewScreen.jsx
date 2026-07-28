@@ -132,7 +132,7 @@ export const OverviewScreen = memo(function OverviewScreen({ analytics, loading 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <section className="min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6">
           <h3 className="mb-6 flex items-center text-base font-bold text-slate-800 sm:text-lg">
-            <ShieldCheck className="mr-2 text-rose-500" size={20} /> DASS-21 (Mean 1-5)
+            <ShieldCheck className="mr-2 text-rose-500" size={20} /> DASS-21 (คะแนนดิบเฉลี่ย 0–21)
           </h3>
           {loading.assessments ? <Skeleton className="h-72" /> : (
             <div className="h-64 w-full min-w-0 sm:h-72">
@@ -140,7 +140,7 @@ export const OverviewScreen = memo(function OverviewScreen({ analytics, loading 
                 <LineChart data={overview.dassTrend} margin={{ top: 5, right: 8, left: -16, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="week" tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={18} />
-                  <YAxis width={32} domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} />
+                  <YAxis width={32} domain={[0, 21]} ticks={[0, 7, 14, 21]} />
                   <RechartsTooltip content={<AssessmentTooltip />} />
                   <Legend iconType="circle" />
                   <Line type="monotone" dataKey="dass_d" name="Depression" stroke="#3b82f6" strokeWidth={3} dot={{ r: 5 }} connectNulls />

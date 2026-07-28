@@ -1,3 +1,8 @@
+import {
+  MONITORING_DATA_CLASSIFICATION,
+  MONITORING_SCHEMA_VERSION,
+} from './datasetManifest.js';
+
 export function createInMemoryMonitoringAdapter() {
   const observers = new Set();
   let disconnectCount = 0;
@@ -18,7 +23,14 @@ export function createInMemoryMonitoringAdapter() {
     },
     replaceDataset(streams, { version = 'test-v1', verifiedAt = Date.now() } = {}) {
       for (const observer of observers) {
-        observer.replaceDataset({ version, streams, verifiedAt });
+        observer.replaceDataset({
+          version,
+          schemaVersion: MONITORING_SCHEMA_VERSION,
+          dataClassification: MONITORING_DATA_CLASSIFICATION,
+          publishedAt: '2026-01-01T00:00:00.000Z',
+          streams,
+          verifiedAt,
+        });
       }
     },
     publishDataset(streams, options = {}) {
@@ -27,6 +39,9 @@ export function createInMemoryMonitoringAdapter() {
         observer.beginDataset(version);
         observer.replaceDataset({
           version,
+          schemaVersion: MONITORING_SCHEMA_VERSION,
+          dataClassification: MONITORING_DATA_CLASSIFICATION,
+          publishedAt: options.publishedAt ?? '2026-01-01T00:00:00.000Z',
           streams,
           verifiedAt: options.verifiedAt ?? Date.now(),
         });

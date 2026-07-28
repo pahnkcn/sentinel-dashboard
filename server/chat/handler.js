@@ -1,10 +1,6 @@
-import { getApps, initializeApp } from 'firebase-admin/app';
-import { getAppCheck } from 'firebase-admin/app-check';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
-import { logger } from 'firebase-functions';
-import { defineSecret, defineString } from 'firebase-functions/params';
-import { onRequest } from 'firebase-functions/v2/https';
+import { getFirestoreClient } from '../firestore.js';
+import { isJsonRequest, setHeader, setPrivateNoStore } from '../http.js';
+import { requireSession } from '../session.js';
 
 import {
   alignAssistantPayloadToRequest,
@@ -25,14 +21,6 @@ import {
 } from './privacyPolicy.js';
 import { createAuthoritativeRosterGateway } from './privacyRoster.js';
 
-const OPENROUTER_API_KEY = defineSecret('OPENROUTER_API_KEY');
-const OPENROUTER_MODEL = defineString('OPENROUTER_MODEL', {
-  default: DEFAULT_OPENROUTER_MODEL,
-});
-const OPENROUTER_SITE_URL = defineString('OPENROUTER_SITE_URL', {
-  default: 'https://sentinel-dashboard.web.app',
-});
-const ALLOWED_ROLES = new Set(['clinician', 'admin']);
 const REQUEST_WINDOW_MS = 60_000;
 const REQUESTS_PER_WINDOW = 30;
 const PROVIDER_REQUESTS_PER_WINDOW = 8;
@@ -81,7 +69,7 @@ Privacy rules:
 
 Metric glossary:
 - self, buddy, command: 1-4; a higher value is more concerning. carriedForward means reused, not newly observed.
-- depression, anxiety, stress: DASS dimensions on 1-5; a higher value is more concerning.
+- depression, anxiety, stress: raw DASS dimensions on 0-21; a higher value is more concerning. Do not assign a clinical category unless the evidence explicitly supplies a validated threshold.
 - mental_severity and physical_injury: 1-3; a higher value is more concerning.
 - cd_risc (0-40) and grit (0-32): a higher value is more favorable.
 - *_forecast values are bounded ordinary-least-squares projections for exploratory decision support only. If the requested forecast metric is absent, say the evidence is insufficient instead of extrapolating it.
@@ -89,50 +77,17 @@ Metric glossary:
 - coverage.populationSize is the cohort size, coverage.disclosedSubjectAliases is only the number of individual aliases disclosed, and coverage.observedPoints is the number of supplied numeric evidence points.`;
 
 function setResponseHeaders(response) {
-  response.set('Cache-Control', 'no-store, max-age=0');
-  response.set('Pragma', 'no-cache');
-  response.set('X-Content-Type-Options', 'nosniff');
+  setPrivateNoStore(response);
 }
 
 function sendError(response, status, code, retryAfter) {
   setResponseHeaders(response);
-  if (retryAfter) response.set('Retry-After', String(retryAfter));
+  if (retryAfter) setHeader(response, 'Retry-After', String(retryAfter));
   response.status(status).json({ error: { code } });
 }
 
-function bearerToken(request) {
-  const authorization = request.get('Authorization') ?? '';
-  const match = authorization.match(/^Bearer ([A-Za-z0-9._~+/-]+=*)$/);
-  return match?.[1] ?? null;
-}
-
 async function authorizeRequest(request) {
-  const token = bearerToken(request);
-  if (!token) throw Object.assign(new Error('missing-auth'), { status: 401 });
-
-  let decoded;
-  try {
-    decoded = await getAuth().verifyIdToken(token);
-  } catch {
-    throw Object.assign(new Error('invalid-auth'), { status: 401 });
-  }
-  if (decoded.email_verified !== true || !ALLOWED_ROLES.has(decoded.sentinelRole)) {
-    throw Object.assign(new Error('forbidden'), { status: 403 });
-  }
-
-  if (process.env.FUNCTIONS_EMULATOR !== 'true') {
-    const appCheckToken = request.get('X-Firebase-AppCheck');
-    if (!appCheckToken) {
-      throw Object.assign(new Error('missing-app-check'), { status: 401 });
-    }
-    try {
-      await getAppCheck().verifyToken(appCheckToken);
-    } catch {
-      throw Object.assign(new Error('invalid-app-check'), { status: 401 });
-    }
-  }
-
-  return decoded;
+  return requireSession(request);
 }
 
 function enforceRateLimit(windows, uid, limit) {
@@ -165,7 +120,7 @@ async function callOpenRouter({ apiKey, body, signal, stage }) {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': OPENROUTER_SITE_URL.value(),
+      'HTTP-Referer': process.env.OPENROUTER_SITE_URL || 'https://sentinel-dashboard.vercel.app',
       'X-OpenRouter-Title': 'Sentinel Dashboard Analyst',
     },
     body: JSON.stringify(body),
@@ -206,7 +161,7 @@ async function requestOpenRouter({
   signal,
   retryTransportErrors = true,
 }) {
-  const model = modelSetting(selectedModel ?? OPENROUTER_MODEL.value());
+  const model = modelSetting(selectedModel ?? process.env.OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL);
   const attempts = [
     { temperature: 0.2, maxTokens: 3_200 },
     { temperature: 0, maxTokens: 4_800 },
@@ -288,14 +243,14 @@ function boundedModelName(value) {
   return /^[a-z0-9._:/-]{1,120}$/i.test(model) ? model : 'OpenRouter model';
 }
 
-if (getApps().length === 0) initializeApp();
-
-const firestore = getFirestore();
 const rosterGateway = createAuthoritativeRosterGateway({
   async readCurrentManifest() {
     try {
-      const snapshot = await firestore.doc('monitoringManifests/current').get();
-      return snapshot.exists ? snapshot.data() : null;
+      const manifest = await getFirestoreClient().getDocument('monitoringManifests/current');
+      if (manifest?.schemaVersion !== 2 || manifest?.dataClassification !== 'synthetic') {
+        throw new Error('privacy-manifest-invalid');
+      }
+      return manifest;
     } catch {
       throw Object.assign(new Error('privacy-roster-read-failed'), {
         publicCode: 'privacy-roster-unavailable',
@@ -304,11 +259,11 @@ const rosterGateway = createAuthoritativeRosterGateway({
   },
   async readStudents(version, limit) {
     try {
-      const snapshot = await firestore
-        .collection(`monitoringDatasets/${version}/students`)
-        .limit(limit)
-        .get();
-      return snapshot.docs.map(document => ({ ...document.data(), id: document.id }));
+      const page = await getFirestoreClient().listDocuments(
+        `monitoringDatasets/${version}/students`,
+        { pageSize: limit },
+      );
+      return page.records;
     } catch {
       throw Object.assign(new Error('privacy-roster-read-failed'), {
         publicCode: 'privacy-roster-unavailable',
@@ -327,7 +282,7 @@ export async function handleSentinelChat(request, response, {
   validateRequest = validatePrivacyChatRequest,
   sanitizeRequest = value => rosterGateway.sanitizeRequest(value),
   createDeterministicPayload = createDeterministicAssistantPayload,
-  getApiKey = () => OPENROUTER_API_KEY.value(),
+  getApiKey = () => process.env.OPENROUTER_API_KEY,
   buildMessages = buildProviderMessages,
   consumeProviderRateLimit = uid => enforceRateLimit(
     providerRateWindows,
@@ -339,15 +294,15 @@ export async function handleSentinelChat(request, response, {
   alignPayload = alignAssistantPayloadToRequest,
   restoreAliases = restoreProviderAliases,
   createReceipt = createDisclosureReceipt,
-  loggerInstance = logger,
+  loggerInstance = console,
 } = {}) {
   setResponseHeaders(response);
   if (request.method !== 'POST') {
-    response.set('Allow', 'POST');
+    setHeader(response, 'Allow', 'POST');
     sendError(response, 405, 'method-not-allowed');
     return;
   }
-  if (!request.is('application/json')) {
+  if (!isJsonRequest(request)) {
     sendError(response, 415, 'json-required');
     return;
   }
@@ -356,7 +311,10 @@ export async function handleSentinelChat(request, response, {
   try {
     identity = await authorize(request);
   } catch (error) {
-    sendError(response, error.status || 401, error.message);
+    const code = typeof error?.code === 'string' && /^[a-z0-9/_-]{1,80}$/iu.test(error.code)
+      ? error.code
+      : 'invalid-auth';
+    sendError(response, Number.isInteger(error?.status) ? error.status : 401, code);
     return;
   }
 
@@ -544,12 +502,3 @@ export async function handleSentinelChat(request, response, {
     clearTimeout(timeout);
   }
 }
-
-export const sentinelChat = onRequest({
-  region: 'asia-southeast1',
-  timeoutSeconds: 90,
-  memory: '512MiB',
-  maxInstances: 20,
-  concurrency: 40,
-  secrets: [OPENROUTER_API_KEY],
-}, handleSentinelChat);

@@ -1,4 +1,8 @@
-import { isSafeDatasetVersion } from './datasetManifest.js';
+import {
+  MONITORING_DATA_CLASSIFICATION,
+  MONITORING_SCHEMA_VERSION,
+  isSafeDatasetVersion,
+} from './datasetManifest.js';
 
 export const MONITORING_STREAMS = Object.freeze(['students', 'logs', 'assessments']);
 
@@ -10,6 +14,9 @@ function initialState(status = 'idle') {
   return {
     status,
     datasetVersion: null,
+    schemaVersion: null,
+    dataClassification: null,
+    publishedAt: null,
     students: [],
     logs: [],
     assessments: [],
@@ -89,6 +96,9 @@ function normalizePayload(payload) {
 function isCompleteDataset(dataset) {
   return (
     isSafeDatasetVersion(dataset?.version)
+    && dataset.schemaVersion === MONITORING_SCHEMA_VERSION
+    && dataset.dataClassification === MONITORING_DATA_CLASSIFICATION
+    && (typeof dataset.publishedAt === 'string' || Number.isFinite(dataset.publishedAt))
     && Number.isFinite(dataset?.verifiedAt)
     && dataset.streams !== null
     && typeof dataset.streams === 'object'
@@ -172,6 +182,9 @@ export function createMonitoringDataStore(adapter) {
         const nextState = {
           ...initialState('connecting'),
           datasetVersion: dataset.version,
+          schemaVersion: dataset.schemaVersion,
+          dataClassification: dataset.dataClassification,
+          publishedAt: dataset.publishedAt,
           lastUpdatedAt: dataset.verifiedAt,
           loading: perStream(() => false),
         };

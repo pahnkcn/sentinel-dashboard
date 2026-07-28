@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { validatePrivacyChatRequest } from '../../functions/privacyPolicy.js';
+import { validatePrivacyChatRequest } from '../../server/chat/privacyPolicy.js';
 import { createMonitoringAnalytics } from '../domain/monitoringAnalytics.js';
 import {
   createAnalysisRequest,

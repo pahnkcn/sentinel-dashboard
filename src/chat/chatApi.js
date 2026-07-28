@@ -1,6 +1,4 @@
-import { getToken } from 'firebase/app-check';
-
-import { appCheck, auth } from '../config/firebase.js';
+import { notifyInvalidAuthSession } from '../auth/authSession.js';
 
 const ERROR_MESSAGES = Object.freeze({
   'chat-not-configured': 'ยังไม่ได้ตั้งค่า OpenRouter API สำหรับระบบนี้',
@@ -16,8 +14,6 @@ const ERROR_MESSAGES = Object.freeze({
   'invalid-auth': 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
   'missing-auth': 'ไม่พบเซสชันผู้ใช้ กรุณาเข้าสู่ระบบใหม่',
   forbidden: 'บัญชีนี้ไม่มีสิทธิ์ใช้งานผู้ช่วยวิเคราะห์',
-  'invalid-app-check': 'ไม่สามารถยืนยันแอปได้ กรุณารีเฟรชหน้าแล้วลองใหม่',
-  'missing-app-check': 'ไม่สามารถยืนยันแอปได้ กรุณารีเฟรชหน้าแล้วลองใหม่',
   'privacy-sensitive-data': 'ระบบหยุดคำขอนี้เพราะพบข้อมูลระบุตัวตนที่ยังไม่ได้ปกปิด',
   'privacy-budget-exceeded': 'คำถามนี้ต้องใช้ข้อมูลมากกว่าเพดานความเป็นส่วนตัว กรุณาถามให้แคบลง',
   'privacy-dataset-mismatch': 'ข้อมูลมีเวอร์ชันใหม่ กรุณารอให้แดชบอร์ดซิงก์แล้วลองอีกครั้ง',
@@ -40,28 +36,18 @@ export async function askSentinelAssistant({
   model,
   signal,
 }) {
-  const user = auth.currentUser;
-  if (!user) throw publicError('missing-auth');
-
-  const [idToken, appCheckResult] = await Promise.all([
-    user.getIdToken(),
-    appCheck ? getToken(appCheck, false) : Promise.resolve(null),
-  ]);
-  const headers = {
-    Authorization: `Bearer ${idToken}`,
-    'Content-Type': 'application/json',
-  };
-  if (appCheckResult?.token) headers['X-Firebase-AppCheck'] = appCheckResult.token;
-
   const response = await fetch('/api/chat', {
     method: 'POST',
-    headers,
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, utterance, conversationState, analysisRequest, evidence }),
     signal,
   });
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
+    if (response.status === 401) notifyInvalidAuthSession();
     throw publicError(body?.error?.code || 'chat-unavailable');
   }
   if (

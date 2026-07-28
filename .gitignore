@@ -11,13 +11,13 @@ node_modules
 dist
 dist-ssr
 *.local
+.generated/
 
 # Local environment overrides
 .env
 .env.*
 !.env.example
 !.env.development.example
-!functions/.env.local.example
 
 # Firebase local cache
 .firebase/

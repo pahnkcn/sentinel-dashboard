@@ -4,7 +4,6 @@ import test from 'node:test';
 import {
   assertLocalEmulatorTarget,
   chunkWrites,
-  commitBatch,
   createDatasetVersion,
   createDemoDocuments,
   DEFAULT_STUDENT_COUNT,
@@ -12,9 +11,8 @@ import {
   getLocalCalendarDate,
   toFirestoreValue,
 } from './seed-emulators.mjs';
-import { decodeAssessment, decodeLog, decodeStudent } from '../src/domain/records.js';
 
-test('refuses any non-demo or non-loopback seed target', () => {
+test('refuses any non-demo or non-loopback emulator target', () => {
   assert.doesNotThrow(() => assertLocalEmulatorTarget(
     'demo-sentinel-dashboard',
     '127.0.0.1:8080',
@@ -29,43 +27,44 @@ test('refuses any non-demo or non-loopback seed target', () => {
   );
 });
 
-test('creates only records accepted by the production decoders', () => {
-  const streams = createDemoDocuments();
-  const decoders = {
-    students: decodeStudent,
-    logs: decodeLog,
-    assessments: decodeAssessment,
-  };
+test('creates deterministic schema-v2 demo records with no real-looking identities', () => {
+  const first = createDemoDocuments({
+    studentCount: 3,
+    endDate: '2026-07-26',
+    seed: 'fixture-seed',
+  });
+  const second = createDemoDocuments({
+    studentCount: 3,
+    endDate: '2026-07-26',
+    seed: 'fixture-seed',
+  });
 
-  for (const [stream, documents] of Object.entries(streams)) {
-    assert.ok(documents.length > 0);
-    for (const document of documents) {
-      const decoded = decoders[stream]({ documentId: document.id, data: document });
-      assert.equal(decoded.ok, true, `${stream}/${document.id}: ${JSON.stringify(decoded.issues)}`);
-    }
-  }
+  assert.deepEqual(first, second);
+  assert.deepEqual(first.students.map(student => student.id), [
+    'demo-0001',
+    'demo-0002',
+    'demo-0003',
+  ]);
+  assert.ok(first.students.every(student => student.name.startsWith('Demo Participant ')));
+  assert.ok(first.students.every(student => student.room.startsWith('Demo Room ')));
+  assert.ok(first.logs.every(log => (
+    [log.self, log.buddy, log.command, log.physicalInjury].some(value => value !== null)
+  )));
+  assert.ok(first.logs.every(log => log.physicalInjury === null));
+  assert.ok(first.assessments.every(assessment => (
+    assessment.dass_d >= 0 && assessment.dass_d <= 21
+  )));
 });
 
-test('creates a large complete development dataset at the dashboard limits', () => {
+test('uses the requested shifted end date and the default bounded population', () => {
   const streams = createDemoDocuments({ endDate: '2026-07-26' });
 
   assert.equal(streams.students.length, DEFAULT_STUDENT_COUNT);
-  assert.equal(streams.logs.length, DEFAULT_STUDENT_COUNT * 16);
   assert.equal(streams.assessments.length, DEFAULT_STUDENT_COUNT * 4);
-  assert.equal(
-    streams.students.length + streams.logs.length + streams.assessments.length,
-    5_250,
-  );
-  assert.equal(new Set(streams.students.map(student => student.room)).size, 25);
+  assert.equal(streams.logs.at(-1).date, '2026-07-26');
   assert.deepEqual(
     [...new Set(streams.assessments.map(assessment => assessment.week))],
     [0, 4, 8, 16],
-  );
-  assert.equal(streams.logs[0].date, '2026-04-12');
-  assert.equal(streams.logs.at(-1).date, '2026-07-26');
-  assert.equal(
-    streams.logs.filter(log => log.date === '2026-07-26').length,
-    DEFAULT_STUDENT_COUNT,
   );
 });
 
@@ -74,34 +73,18 @@ test('uses the local current date and rejects invalid fixture end dates', () => 
   assert.equal(getLocalCalendarDate(() => localMidnight), '2026-07-26');
   assert.throws(
     () => createDemoDocuments({ studentCount: 1, endDate: '2026-02-30' }),
-    /valid YYYY-MM-DD calendar date/,
+    /valid calendar date/,
   );
 });
 
 test('uses a fresh safe dataset version and bounded commit batches', () => {
-  assert.equal(createDatasetVersion(() => 1_000), 'local-large-v2-rs');
-
+  assert.equal(createDatasetVersion(() => 1_000), 'demo-local-v2-rs');
   const writes = Array.from({ length: 1_001 }, (_, index) => index);
-  const batches = chunkWrites(writes, 450);
-  assert.deepEqual(batches.map(batch => batch.length), [450, 450, 101]);
+  assert.deepEqual(chunkWrites(writes, 450).map(batch => batch.length), [450, 450, 101]);
   assert.throws(() => chunkWrites(writes, 501), /between 1 and 500/);
 });
 
-test('explains how to recover when the Firestore emulator is offline', async () => {
-  await assert.rejects(
-    () => commitBatch({
-      host: '127.0.0.1:8080',
-      projectId: 'demo-project',
-      writes: [],
-      request: async () => {
-        throw new TypeError('fetch failed');
-      },
-    }),
-    /Run "npm\.cmd run emulators" in another terminal and leave it running/,
-  );
-});
-
-test('encodes nested fixture values for Firestore REST commits', () => {
+test('encodes nested fixture values and immutable document writes', () => {
   assert.deepEqual(toFirestoreValue({
     count: 2,
     ratio: 1.5,
@@ -122,9 +105,15 @@ test('encodes nested fixture values for Firestore REST commits', () => {
     },
   });
 
-  const write = documentWrite('demo-project', 'collection/document', { value: 1 });
+  const write = documentWrite(
+    'demo-project',
+    'collection/document',
+    { value: 1 },
+    { exists: false },
+  );
   assert.equal(
     write.update.name,
     'projects/demo-project/databases/(default)/documents/collection/document',
   );
+  assert.deepEqual(write.currentDocument, { exists: false });
 });

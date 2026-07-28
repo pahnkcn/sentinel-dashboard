@@ -134,7 +134,7 @@ test('classifies alerts from each student latest observation', () => {
   });
 });
 
-test('keeps presentation-only LOCF out of population statistics and alerts', () => {
+test('keeps carry-forward values out of statistics but uses per-channel latest alert state', () => {
   const analytics = createMonitoringAnalytics({
     students: [student('a'), student('b')],
     logs: [
@@ -151,11 +151,45 @@ test('keeps presentation-only LOCF out of population statistics and alerts', () 
   assert.equal(overview.populationTrend[0].buddy, 2);
   assert.deepEqual(overview.alerts, {
     red3: 0,
-    redSelfPlus: 0,
+    redSelfPlus: 1,
     psychiatricCare: 0,
   });
   assert.equal(individual.fourColorTrend[1].buddy, 1);
   assert.equal(individual.fourColorTrend[1].isBuddyCF, true);
+});
+
+test('starts room status on the latest available date and carries each channel independently', () => {
+  const analytics = createMonitoringAnalytics({
+    students: [student('a')],
+    logs: [
+      log('self_day', 'a', '2026-05-10', {
+        self: 4,
+        buddy: null,
+        command: null,
+        physicalInjury: 2,
+      }),
+      log('buddy_day', 'a', '2026-05-13', {
+        self: null,
+        buddy: 3,
+        command: null,
+        physicalInjury: null,
+      }),
+    ],
+    asOfDate: '2026-05-20',
+  });
+
+  assert.equal(analytics.getLatestObservationDate(), '2026-05-13');
+  const status = analytics.getRoomStatus();
+  const row = status.rooms[0].students[0];
+  assert.equal(status.date, '2026-05-13');
+  assert.equal(row.observation.self, 4);
+  assert.equal(row.observation.isSelfCF, true);
+  assert.equal(row.observation.selfSourceDate, '2026-05-10');
+  assert.equal(row.observation.buddy, 3);
+  assert.equal(row.observation.isBuddyCF, false);
+  assert.equal(row.observation.command, null);
+  assert.equal(row.observation.physicalInjury, null);
+  assert.equal(row.physicalLabel, '-');
 });
 
 test('excludes future-dated observations from current projections', () => {

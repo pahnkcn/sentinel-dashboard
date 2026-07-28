@@ -63,6 +63,8 @@ function StudentStatusCard({
     {
       label: 'Self',
       value: observation?.self,
+      carriedForward: observation?.isSelfCF,
+      sourceDate: observation?.selfSourceDate,
     },
     {
       label: 'Buddy',
@@ -186,7 +188,11 @@ function RoomSection({ room }) {
               <tr key={student.id} className="border-b border-slate-50 transition hover:bg-slate-50/50">
                 <td className="break-words p-3 font-medium text-slate-400">{student.id}</td>
                 <td className="break-words p-3 font-bold text-slate-700">{student.name}</td>
-                <StatusCell value={observation?.self} />
+                <StatusCell
+                  value={observation?.self}
+                  carriedForward={observation?.isSelfCF}
+                  sourceDate={observation?.selfSourceDate}
+                />
                 <StatusCell
                   value={observation?.buddy}
                   carriedForward={observation?.isBuddyCF}
@@ -227,10 +233,12 @@ function RoomSection({ room }) {
 }
 
 export const RoomStatusScreen = memo(function RoomStatusScreen({ analytics, loading }) {
-  const [selectedDate, setSelectedDate] = useState(getLocalDate);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const latestAvailableDate = analytics.getLatestObservationDate();
+  const activeDate = selectedDate || latestAvailableDate || getLocalDate();
   const roomStatus = useMemo(
-    () => analytics.getRoomStatus({ date: selectedDate }),
-    [analytics, selectedDate],
+    () => analytics.getRoomStatus({ date: activeDate }),
+    [analytics, activeDate],
   );
   const isLoading = loading.students || loading.logs || loading.assessments;
 
@@ -247,8 +255,9 @@ export const RoomStatusScreen = memo(function RoomStatusScreen({ analytics, load
             id="room-status-date"
             type="date"
             className="min-w-0 flex-1 rounded-lg border bg-white px-3 py-2 text-sm font-bold outline-none sm:flex-none"
-            value={selectedDate}
-            onChange={event => setSelectedDate(event.target.value)}
+            value={activeDate}
+            max={latestAvailableDate || undefined}
+            onChange={event => setSelectedDate(event.target.value || null)}
           />
         </div>
       </div>

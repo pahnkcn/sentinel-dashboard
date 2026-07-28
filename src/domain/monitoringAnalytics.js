@@ -1,5 +1,6 @@
 const DASS_WEEKS = Object.freeze([0, 4, 8, 16]);
 const RESILIENCE_WEEKS = Object.freeze([0, 8, 16]);
+const FOUR_COLOR_FIELDS = Object.freeze(['self', 'buddy', 'command']);
 
 function round(value) {
   return Number(value.toFixed(2));
@@ -82,25 +83,19 @@ function applyLocf(logs) {
   const processed = [];
   for (const studentLogs of byStudent.values()) {
     studentLogs.sort(compareByDateThenId);
-    let lastBuddy = null;
-    let lastCommand = null;
+    const latestByField = Object.fromEntries(FOUR_COLOR_FIELDS.map(field => [field, null]));
 
     for (const log of studentLogs) {
-      const buddyObserved = log.buddy !== null;
-      const commandObserved = log.command !== null;
-
-      if (buddyObserved) lastBuddy = { value: log.buddy, date: log.date };
-      if (commandObserved) lastCommand = { value: log.command, date: log.date };
-
-      processed.push({
-        ...log,
-        buddy: buddyObserved ? log.buddy : (lastBuddy?.value ?? null),
-        command: commandObserved ? log.command : (lastCommand?.value ?? null),
-        isBuddyCF: !buddyObserved && lastBuddy !== null,
-        isCommandCF: !commandObserved && lastCommand !== null,
-        buddySourceDate: lastBuddy?.date ?? null,
-        commandSourceDate: lastCommand?.date ?? null,
-      });
+      const point = { ...log };
+      for (const field of FOUR_COLOR_FIELDS) {
+        const prefix = field[0].toUpperCase() + field.slice(1);
+        const observed = Number.isFinite(log[field]);
+        if (observed) latestByField[field] = { value: log[field], date: log.date };
+        point[field] = observed ? log[field] : (latestByField[field]?.value ?? null);
+        point[`is${prefix}CF`] = !observed && latestByField[field] !== null;
+        point[`${field}SourceDate`] = latestByField[field]?.date ?? null;
+      }
+      processed.push(point);
     }
   }
   return processed;
@@ -217,6 +212,24 @@ export function createMonitoringAnalytics({
   const studentById = new Map(studentList.map(student => [student.id, student]));
   const observedLogs = deduplicateLogs(logs).filter(log => log.date <= asOfDate);
   const presentationLogs = applyLocf(observedLogs);
+  const latestObservationDate = observedLogs.reduce(
+    (latest, log) => (!latest || log.date > latest ? log.date : latest),
+    null,
+  );
+  const observedLogsByStudent = new Map();
+  const presentationLogsByStudent = new Map();
+  for (const log of observedLogs) {
+    if (!observedLogsByStudent.has(log.studentId)) observedLogsByStudent.set(log.studentId, []);
+    observedLogsByStudent.get(log.studentId).push(log);
+  }
+  for (const log of presentationLogs) {
+    if (!presentationLogsByStudent.has(log.studentId)) {
+      presentationLogsByStudent.set(log.studentId, []);
+    }
+    presentationLogsByStudent.get(log.studentId).push(log);
+  }
+  for (const studentLogs of observedLogsByStudent.values()) studentLogs.sort(compareByDateThenId);
+  for (const studentLogs of presentationLogsByStudent.values()) studentLogs.sort(compareByDateThenId);
   const assessmentList = deduplicateAssessments(assessments).sort(compareByWeekThenId);
   const assessmentsByStudent = new Map();
 
@@ -232,6 +245,10 @@ export function createMonitoringAnalytics({
       return studentList.slice();
     },
 
+    getLatestObservationDate() {
+      return latestObservationDate;
+    },
+
     getOverview({ gender = 'all' } = {}) {
       const filteredStudents = gender === 'all'
         ? studentList
@@ -242,7 +259,7 @@ export function createMonitoringAnalytics({
         filteredIds.has(assessment.studentId)
       ));
       const latestLogByStudent = new Map();
-      for (const log of observedLogs) {
+      for (const log of presentationLogs) {
         const current = latestLogByStudent.get(log.studentId);
         if (!current || compareByDateThenId(current, log) < 0) {
           latestLogByStudent.set(log.studentId, log);
@@ -270,10 +287,7 @@ export function createMonitoringAnalytics({
     },
 
     getRoomStatus({ date } = {}) {
-      const observationByStudent = new Map();
-      for (const log of presentationLogs) {
-        if (log.date === date) observationByStudent.set(log.studentId, log);
-      }
+      const targetDate = date || latestObservationDate || '';
 
       const studentsByRoom = new Map();
       for (const student of studentList) {
@@ -290,7 +304,29 @@ export function createMonitoringAnalytics({
             .slice()
             .sort((left, right) => left.id.localeCompare(right.id, 'th', { numeric: true }))
             .map(student => {
-              const observation = observationByStudent.get(student.id) ?? null;
+              const studentObservedLogs = observedLogsByStudent.get(student.id) ?? [];
+              const studentPresentationLogs = presentationLogsByStudent.get(student.id) ?? [];
+              const latestPresentation = studentPresentationLogs
+                .filter(log => log.date <= targetDate)
+                .at(-1) ?? null;
+              const exactObservation = studentObservedLogs
+                .filter(log => log.date === targetDate)
+                .at(-1) ?? null;
+              const observation = latestPresentation
+                ? {
+                    ...latestPresentation,
+                    date: targetDate,
+                    physicalInjury: exactObservation?.physicalInjury ?? null,
+                    ...Object.fromEntries(FOUR_COLOR_FIELDS.flatMap(field => {
+                      const prefix = field[0].toUpperCase() + field.slice(1);
+                      const sourceDate = latestPresentation[`${field}SourceDate`];
+                      return [
+                        [`is${prefix}CF`, sourceDate !== null && sourceDate !== targetDate],
+                        [`${field}SourceDate`, sourceDate ?? null],
+                      ];
+                    })),
+                  }
+                : null;
               const studentAssessments = assessmentsByStudent.get(student.id) ?? [];
               const assessment = observation
                 ? latestAtOrBefore(studentAssessments, observation.week)
@@ -314,7 +350,7 @@ export function createMonitoringAnalytics({
             }),
         }));
 
-      return { date, rooms };
+      return { date: targetDate, rooms };
     },
 
     getIndividual({ studentId } = {}) {
@@ -339,8 +375,10 @@ export function createMonitoringAnalytics({
           self: log.self,
           buddy: log.buddy,
           command: log.command,
+          isSelfCF: log.isSelfCF,
           isBuddyCF: log.isBuddyCF,
           isCommandCF: log.isCommandCF,
+          selfSourceDate: log.selfSourceDate,
           buddySourceDate: log.buddySourceDate,
           commandSourceDate: log.commandSourceDate,
         })),

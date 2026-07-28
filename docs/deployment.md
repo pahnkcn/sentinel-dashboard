@@ -1,275 +1,242 @@
-# Deployment runbook
+# Vercel Hobby deployment runbook
 
-## 1. Prepare the Firebase project
+This runbook deploys a personal, non-commercial synthetic demonstration.
+Vercel Hobby must not host real or re-identifiable monitoring data. Firebase is
+used only for Cloud Firestore.
 
-1. Create or select the intended Firebase project and web app.
-2. Initialize the Firestore database in the approved region before loading any
-   sensitive records. Treat location and data residency as a design decision:
-   changing them later requires a controlled migration.
-3. Enable Google sign-in in Firebase Authentication.
-4. Add the production and approved test hosts to Authorized domains.
-5. Do not create or import sensitive documents yet. Keep Firestore empty, or
-   behind a reviewed deny-all maintenance rule, until the target Security
-   Rules deployment has succeeded and its access probes pass.
-6. Use `.env.example` as the remote build template and replace every
-   placeholder for that project. Never reuse the development emulator file.
-7. Create an OpenRouter key dedicated to this deployment, set a credit limit,
-   and keep input/output logging and data-discount sharing disabled.
+Current references:
 
-Never put a service-account key, Admin SDK credential, or other secret in a
-`VITE_*` variable. Vite embeds those values in public browser assets.
+- [Vercel Hobby limits](https://vercel.com/docs/plans/hobby)
+- [Vercel OIDC for GCP](https://vercel.com/docs/oidc/gcp)
+- [Vercel Function duration](https://vercel.com/docs/functions/configuring-functions/duration)
+- [Google Identity server verification](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token)
+- [Firestore security rules](https://firebase.google.com/docs/firestore/security/get-started)
 
-## 2. Provision staff claims
+## 1. Create the Google Cloud and OAuth resources
 
-Use audited server-side Admin SDK tooling. Preserve unrelated custom claims
-when assigning a role:
+1. Create or select one Google Cloud project and initialize Cloud Firestore in
+   a region compatible with the application's data-residency decision.
+2. Deploy `firestore.rules` before adding any documents. The rules deny every
+   browser read and write, including Firebase-authenticated clients.
+3. Create a Google OAuth Web client. Register only the exact localhost,
+   production, and optional stable staging JavaScript origins. Do not add
+   wildcard preview domains.
+4. Record the OAuth client ID for both `VITE_GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_ID`; the values must match.
+5. Create a dedicated OpenRouter key only if Sentinel Analyst is enabled. Turn
+   off input/output logging and data-discount sharing and set a hard budget.
 
-```js
-const user = await getAuth().getUser(uid);
-await getAuth().setCustomUserClaims(uid, {
-  ...user.customClaims,
-  sentinelRole: 'clinician', // or 'admin'
-});
+Deploy and test the rules:
+
+```sh
+npx firebase-tools@14.23.0 deploy --only firestore:rules --project YOUR_PROJECT_ID
+npm run test:rules
 ```
 
-Only the exact values `clinician` and `admin` are accepted. The user must sign
-out and back in, or otherwise refresh the ID token, after a change.
+An Admin/REST client authenticated by IAM bypasses Security Rules. Rules tests
+do not prove that a service account is least privilege.
 
-Removing the claim and revoking refresh tokens does not invalidate an ID token
-that was already issued. During an emergency, first deploy a temporary
-Firestore rule that denies the affected UID—or denies all protected reads—then
-remove the claim, revoke refresh tokens, terminate known sessions, and keep the
-temporary deny until the old token has expired and access tests confirm denial.
-Review and test the final rule before restoring normal service.
+## 2. Configure Vercel OIDC and GCP Workload Identity Federation
 
-Do not add client-side claim management to this repository.
+Use Vercel's team issuer mode so the issuer is scoped to the Vercel team.
 
-This release changes Firebase Auth from its browser-local default to
-tab-scoped session persistence. Before rollout over an older deployment,
-revoke legacy refresh tokens according to the incident policy and require
-staff to close old tabs or clear the site's stored data. The new client does
-not load a locally persisted user into the authorized dashboard.
+1. In GCP IAM & Admin, create a Workload Identity Pool and an OIDC provider.
+2. Set issuer to `https://oidc.vercel.com/TEAM_SLUG` and allowed audience to
+   `https://vercel.com/TEAM_SLUG`.
+3. Map `google.subject` to `assertion.sub`.
+4. Create a dedicated service account such as
+   `sentinel-vercel-reader@PROJECT_ID.iam.gserviceaccount.com`.
+5. Grant that service account only `roles/datastore.viewer` on the project.
+6. On the service account, grant `roles/iam.workloadIdentityUser` only to this
+   production principal:
 
-## 3. Configure App Check
+   ```text
+   principal://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/subject/owner:TEAM_SLUG:project:VERCEL_PROJECT_NAME:environment:production
+   ```
 
-1. Register the web app with a reCAPTCHA Enterprise score-based site key.
-2. Restrict the key to approved production and test domains.
-3. Set `VITE_FIREBASE_APPCHECK_SITE_KEY` during every remote build.
-4. Deploy and verify App Check request metrics.
-5. Enable enforcement for Cloud Firestore only after legitimate traffic is
-   receiving valid tokens.
+7. Do not grant the preview subject or an entire pool principal access to the
+   production reader.
+8. Enable the IAM Credentials, Security Token Service, and Firestore APIs.
 
-App Check may be empty only for the forced localhost emulator environment. A
-remote build without a site key fails. After Firestore enforcement is enabled,
-remote clients without a valid token are rejected. App Check is an abuse
-signal, not an authorization mechanism.
+The Vercel Functions exchange their request OIDC token for a short-lived access
+token. Do not create a service-account JSON key and do not store
+`VERCEL_OIDC_TOKEN` as an environment variable.
 
-## 4. Pre-deployment gate
+## 3. Configure Vercel
+
+Import the repository as a Vite project. `vercel.json` fixes the build output to
+`dist`, Function region to `sin1`, Fluid Compute on, chat duration to 90 seconds,
+and other API durations to 15 seconds.
+
+Set these Production environment variables:
+
+```text
+VITE_GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_ID
+SESSION_SECRET
+GCP_PROJECT_ID
+GCP_PROJECT_NUMBER
+GCP_SERVICE_ACCOUNT_EMAIL
+GCP_WORKLOAD_IDENTITY_POOL_ID
+GCP_WORKLOAD_IDENTITY_PROVIDER_ID
+OPENROUTER_API_KEY
+OPENROUTER_MODEL
+OPENROUTER_SITE_URL
+```
+
+`SESSION_SECRET` must contain at least 32 cryptographically random bytes. Keep
+all variables except `VITE_GOOGLE_CLIENT_ID` server-only. Scope production GCP
+and OpenRouter values to Production, not Preview or Development.
+
+In Project Settings > Deployment Protection, enable Vercel Authentication with
+Standard Protection. This protects preview deployments on Hobby; production
+still relies on the application GIS access gate. Configure a Vercel WAF rate
+rule for `POST /api/chat` in addition to the in-process limiter.
+
+## 4. Generate and review synthetic data
+
+Keep the trusted workbook outside the repository. Generate a profile and
+dataset with an explicit end date and reviewed deterministic seed:
+
+```sh
+npm run demo:generate -- --workbook "C:\path\to\trusted-workbook.xlsx" --end-date 2026-07-28 --seed reviewed-demo-v2 --output .generated/sentinel-demo.json --profile-output .generated/workbook-profile.json
+```
+
+The command validates the five sheets, formula results, duplicate Self rows,
+Buddy zero values, canonical hidden Command sheet, week agreement, and score
+ranges. It writes only aggregate profile information and unrelated synthetic
+records.
+
+Review before publication:
+
+- profile `schemaVersion` is 2 and contains no names, IDs, rooms, source dates,
+  or per-person series;
+- dataset `dataClassification` is `synthetic`;
+- every student, log, and assessment ID begins with `demo-`;
+- names and rooms are generic demo labels;
+- DASS is 0–21, CD-RISC 0–40, and GRIT 0–32;
+- nullable logs contain at least one actually observed channel;
+- the source workbook and `.generated/` files are not staged in Git.
+
+## 5. Publish with a separate operator identity
+
+The publisher uses Application Default Credentials. Authenticate an audited
+operator that can write only the dataset, current manifest, and allowlist paths;
+do not use the Vercel reader service account.
+
+Always run dry-run first:
+
+```sh
+npm run demo:publish -- --dataset .generated/sentinel-demo.json --project-id YOUR_PROJECT_ID --version demo-2026-07-28
+```
+
+After two-person review of project, version, classification, and counts:
+
+```sh
+npm run demo:publish -- --dataset .generated/sentinel-demo.json --project-id YOUR_PROJECT_ID --version demo-2026-07-28 --commit
+```
+
+Candidate records have an `exists: false` precondition. All immutable batches
+must succeed before the tool updates `monitoringManifests/current`. If any
+candidate batch fails, do not change the manifest; investigate the unpublished
+version and either complete it under the same controlled procedure or choose a
+new version.
+
+Record the operator, source workbook checksum (not its contents), generated
+dataset checksum, project, version, counts, quality report, and manifest update
+time in the deployment audit trail.
+
+## 6. Provision authorized users
+
+Dry-run and review the normalized email, role, document hash, and project:
+
+```sh
+npm run auth:provision -- --email clinician@example.com --role clinician --project-id YOUR_PROJECT_ID
+```
+
+Then commit:
+
+```sh
+npm run auth:provision -- --email clinician@example.com --role clinician --project-id YOUR_PROJECT_ID --commit
+```
+
+Only `clinician` and `admin` are valid. Revoke access with the same command plus
+`--disable --commit`; do not delete the document. Rotate `SESSION_SECRET` when
+all outstanding Sentinel sessions must be invalidated immediately.
+
+## 7. Pre-deployment gate
 
 ```sh
 npm ci
-npm ci --prefix functions
 npm test
 npm run test:rules
 npm run lint
 npm run build
-npm audit --audit-level=high
+npm run vercel:build
 ```
 
-Stop if any command fails, if a production chunk exceeds the configured build
-warning, or if the rules suite cannot start its emulator. The emulator test may
-download the pinned Firebase CLI on its first run.
+Inspect `dist` and the Vercel build output. They must not contain Firebase Auth,
+App Check, Firebase client configuration, `VITE_FIREBASE_*`, service-account
+material, `SESSION_SECRET`, or `OPENROUTER_API_KEY`.
 
-The production Hosting policy sends HSTS for two years with
-`includeSubDomains; preload`. Before deploying it, inventory every current and
-planned subdomain of the host and confirm it is permanently HTTPS-capable. Do
-not submit the domain to the browser preload list without organizational
-approval. If that guarantee cannot be made, reduce the HSTS policy and update
-its regression test before deployment.
-
-## 5. Deploy and verify Firestore rules
+Run a local smoke test with the Firestore emulator:
 
 ```sh
-npx --yes firebase-tools@14.23.0 deploy \
-  --only firestore:rules \
-  --project YOUR_PROJECT_ID
+npx vercel link
+npx vercel pull
+cp .env.development.example .env.local
+npm run emulators
+npm run emulators:seed -- --end-date 2026-07-28
+npm run auth:provision -- --email clinician@example.com --role clinician --project-id demo-sentinel-dashboard --emulator-host 127.0.0.1:8080 --commit
+npm run dev:vercel
 ```
 
-Use CI or an authenticated operator with the least Firebase permissions needed
-for this deployment. Keep `--project` explicit; the tracked default is a demo
-project so an accidental unqualified production deploy fails. Do not deploy
-from an unreviewed working tree.
+The emulator seed command refuses non-loopback hosts and project IDs that do
+not begin with `demo-`. Use the same email as the localhost Google OAuth test
+user when provisioning the emulator allowlist.
 
-Deploy and verify the restrictive rules before every sensitive administrative
-import. Do not combine this command with Hosting: a multi-service Firebase
-deployment is not an atomic transaction, and its internal service order cannot
-serve as a security prerequisite.
+## 8. Deploy and verify
 
-Confirm the deployed release matches the reviewed `firestore.rules` and run
-access probes against the target project. Before publication, signed-out,
-ordinary verified, and unverified clinician accounts must be unable to read the
-manifest or records; every browser role must be unable to create, update, or
-delete. The emulator suite is the release gate for exact-current-manifest,
-current-version, manifest-list, inactive-version, unknown-path, and nested-path
-behavior. Record the project, rules release, operator, and timestamp before
-continuing.
+Create a protected preview first, then promote the reviewed commit to
+Production. Verify:
 
-## 6. Publish one immutable dataset
+- signed-out visitors see only the Access Gate;
+- an invalid, expired, wrong-audience, unverified, absent, disabled, or
+  wrong-role Google account cannot create a session;
+- session cookies are HttpOnly, Secure, SameSite=Strict, browser-session-only,
+  and cleared by logout;
+- every unauthenticated API request is denied with a stable error and
+  `Cache-Control: private, no-store`;
+- an authorized account loads all three streams, sees the permanent synthetic
+  banner, and refreshes only when requested;
+- a manifest change during pagination produces a restart rather than mixed
+  records;
+- direct browser Firestore reads and every browser write fail;
+- `/api/chat` enforces role, roster, request size, privacy budget, rate limits,
+  provider fallback, and no-store responses;
+- browser bundles and network responses expose no server secret;
+- CSP, HSTS, `nosniff`, frame denial, referrer policy, permissions policy, COOP,
+  CORP, and no-index headers are present.
 
-Use separately deployed, audited Admin SDK tooling with a least-privilege
-credential. Admin SDK access bypasses Firestore Security Rules, so the importer
-is a privileged production system and must have its own review, logs, backups,
-and incident controls.
+Record the Vercel deployment URL and ID, commit, Firestore project, manifest
+version/update time, rules release, OAuth origins, WIF principal, IAM review,
+and smoke-test result.
 
-1. Generate a unique safe version matching
-   `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`.
-2. Write the complete candidate to these new paths, preserving stable logical
-   document IDs within the isolated version:
-   - `monitoringDatasets/{version}/students/{studentId}`
-   - `monitoringDatasets/{version}/logs/{logId}`
-   - `monitoringDatasets/{version}/assessments/{assessmentId}`
-3. Wait for every write to commit, then re-read the candidate. Validate strict
-   schemas, score ranges, assessment schedules, deterministic duplicate keys,
-   collection limits, and that every log and assessment references a student
-   in the same version.
-4. Reconcile counts and checksums with the approved source. Stop and quarantine
-   or delete the unpublished candidate if any check fails.
-5. In a transaction or with an equivalent last-update precondition, write
-   `monitoringManifests/current` as `{ version: "THE_VERSION" }`. This must be
-   the final publish operation, with one active publisher.
-6. Never mutate a published version. Retain the previous immutable version
-   according to policy until production verification succeeds; rollback is a
-   preconditioned manifest change to a previously validated version.
+## 9. Rollback
 
-Creating a candidate without changing the manifest must not affect the live
-dashboard. The final manifest change makes only the selected version readable
-through Security Rules, and the client still waits for all three verified
-streams before replacing state.
+Application rollback and data rollback are independent:
 
-For an existing pre-manifest deployment, schedule a maintenance window. Deploy
-and verify a temporary deny-all rule first, deploy the version-aware Hosting
-release separately, import and validate the candidate, publish its manifest,
-then deploy and verify the final role rules before reopening access. This
-sequence deliberately makes legacy top-level clients fail closed and prevents
-old tabs from observing a mixed migration.
+- Roll back application code with Vercel's deployment rollback only after
+  confirming the older code supports schema v2 and the current APIs.
+- Roll back data by selecting a previously validated immutable synthetic
+  version. Re-verify all three stream counts, schema v2, synthetic
+  classification, and checksum. With one active operator and an update-time
+  precondition, change only `monitoringManifests/current` to that version and
+  record a new `publishedAt`. Never copy records into the old version or mutate
+  it in place.
 
-## 7. Configure and deploy Sentinel Analyst Function
-
-Store the provider credential in Firebase Secret Manager. Never put it in a
-`VITE_*` variable, `.env.example`, Hosting config, or client code:
-
-```sh
-npx --yes firebase-tools@14.23.0 functions:secrets:set OPENROUTER_API_KEY \
-  --project YOUR_PROJECT_ID
-```
-
-Set `OPENROUTER_MODEL` and `OPENROUTER_SITE_URL` as Functions string
-parameters when prompted during deployment, or in the reviewed project-specific
-Functions environment configuration. The fallback and initial UI model is
-`z-ai/glm-5.2`; interactive requests may select only the six model IDs in the
-server allowlist. Before each release, confirm every selectable model still
-supports strict structured output and has an endpoint available under Zero Data
-Retention routing.
-
-The Function now reads `monitoringManifests/current` and the bounded current
-`students` roster to enforce authoritative identifier redaction. Run it with a
-reviewed service account that can read those documents but cannot write
-monitoring data. Remember that Admin SDK access bypasses Firestore Security
-Rules; audit this IAM grant separately from the clinician client rules.
-
-Deploy the Function and verify signed-out, wrong-role, missing-App-Check,
-legacy-body, privacy-budget, roster-unavailable, dataset-mismatch, rate-limit,
-provider-failure, and authorized success paths:
-
-```sh
-npx --yes firebase-tools@14.23.0 deploy \
-  --only functions:sentinelChat \
-  --project YOUR_PROJECT_ID
-```
-
-Do not enable the chatbot with real records until the organization approves
-OpenRouter and underlying provider processing. Confirm the OpenRouter account
-does not enable input/output logging or data-discount sharing and that the
-dedicated key has an appropriate budget.
-
-## 8. Deploy Hosting separately
-
-```sh
-npx --yes firebase-tools@14.23.0 deploy \
-  --only hosting \
-  --project YOUR_PROJECT_ID
-```
-
-Deploy Hosting only after the rules release is verified and the manifest
-selects a fully validated dataset. Record the Hosting release separately from
-the rules release.
-
-## 9. Post-deployment verification
-
-Verify all of the following:
-
-- signed-out users see only the access gate;
-- an ordinary verified user and an unverified claimed user are denied;
-- clinician and admin users can read all three workflows;
-- clinician and admin users can get only `monitoringManifests/current`; listing
-  manifests and reading candidate or retired versions remains denied;
-- closing the signed-in tab or browser requires authentication in a new
-  session;
-- create, update, and delete attempts remain denied;
-- invalid/truncated data pauses analytics;
-- an initial cache-only snapshot never reaches analytics and missing server
-  verification fails closed after 15 seconds;
-- an offline/cache-only transition pauses analytics, and reconnecting recovers
-  only after another server-confirmed snapshot;
-- a snapshot with pending local writes pauses analytics and cannot update the
-  last-verified time;
-- staging a candidate without changing the manifest leaves the current UI
-  unchanged, while a manifest transition clears the old version and publishes
-  all three new streams together only after full verification;
-- mutating any stream under the published version fails closed;
-- the displayed last-verified time represents full-dataset transport
-  verification, while source observation age is checked against the
-  operational freshness SLA;
-- App Check requests are valid before enforcement;
-- the OpenRouter key is absent from browser assets and network responses;
-- `/api/chat` rejects missing/invalid Auth and App Check, accepts only
-  clinician/admin users, and returns `Cache-Control: no-store`;
-- chat input stays disabled until the verified dataset is ready and while one
-  response is in flight;
-- provider-bound bodies contain no current roster name, student ID, room,
-  browser alias, evidence ID, dataset label, natural-language utterance, or
-  free-form history; provider-only aliases are reversed before the response is
-  returned; reject the legacy `messages`/`context` request shape and unknown
-  evidence fields;
-- aggregate series suppress groups below five, rankings contain no more than
-  five aliases, comparisons no more than three, and future-dated records remain
-  withheld;
-- follow-ups and model switching keep at most two sanitized turns in browser
-  memory but forward no free-form history to the provider; clearing, signing
-  out, readiness loss, or dataset rollover removes UI history, alias maps,
-  semantic state, and the evidence cache;
-- text, table, graph, prediction, provider error, and clear-conversation flows
-  behave as reviewed;
-- exact lookups/counts, latest comparisons, window means, evidence-ordered
-  rankings, trends, supplied or unavailable forecasts, and unsupported causal
-  explanations return the strict UI schema with
-  `providerEgress: false`, zero provider bytes, and zero model tokens;
-- historical narrative synthesis sends derived statistics without weekly
-  points; numeric grounding and canonical artifacts constrain its response;
-- questions that require model synthesis make one bounded transport attempt,
-  visibly fall back to deterministic evidence on timeout/provider failure, may
-  retry invalid structured output once, and map provider billing exhaustion to
-  `chat-credit-exhausted` without retrying or fallback;
-- sign-out returns to the access gate and disconnects listeners;
-- response headers include CSP, HSTS, `nosniff`, frame denial, referrer policy,
-  permissions policy, COOP, and CORP.
-
-Example header check:
-
-```sh
-curl -sSI https://YOUR_HOST/ | sed -n '1,40p'
-```
-
-Record the deployed commit, Firebase project, operator, dataset version, rules
-release, Hosting release, and verification result in the deployment audit
-trail.
+After a manifest rollback, active clients should receive
+`dataset-version-changed`, discard buffered/current data, and load the selected
+version atomically. Repeat the signed-out, authorized-load, refresh, chat, and
+header smoke tests. If the previous candidate cannot be revalidated, keep the
+current manifest and roll forward with a new immutable `demo-*` version.

@@ -65,23 +65,26 @@ test('rejects mismatched and prototype-sensitive identifiers', () => {
   })).includes('studentId'));
 });
 
-test('decodes nullable Buddy and Command observations', () => {
+test('decodes nullable signals, optional self timestamp, and Buddy zero as missing', () => {
   const decoded = decodeLog({
     documentId: 'log_001_2026-05-12',
     data: {
       studentId: '001',
       date: '2026-05-12',
       week: 1,
-      self: 2,
-      buddy: null,
+      self: null,
+      buddy: 0,
       command: undefined,
       physicalInjury: 1,
+      selfObservedAt: '2026-05-12T09:30:00.000Z',
     },
   });
 
   assert.equal(decoded.ok, true);
+  assert.equal(decoded.value.self, null);
   assert.equal(decoded.value.buddy, null);
   assert.equal(decoded.value.command, null);
+  assert.equal(decoded.value.selfObservedAt, '2026-05-12T09:30:00.000Z');
 });
 
 test('rejects invalid dates, numeric strings, and out-of-range observations', () => {
@@ -110,9 +113,9 @@ test('decodes DASS-only assessments with nullable resilience scores', () => {
     data: {
       studentId: '001',
       week: 4,
-      dass_d: 2.5,
-      dass_a: 2,
-      dass_s: 3,
+      dass_d: 12,
+      dass_a: 0,
+      dass_s: 21,
       cd_risc: null,
       grit: null,
       drawing_note: '  reviewed  ',
@@ -123,6 +126,8 @@ test('decodes DASS-only assessments with nullable resilience scores', () => {
   assert.equal(decoded.value.cd_risc, null);
   assert.equal(decoded.value.grit, null);
   assert.equal(decoded.value.drawing_note, 'reviewed');
+  assert.equal(decoded.value.dass_a, 0);
+  assert.equal(decoded.value.dass_s, 21);
 });
 
 test('accepts resilience scores only on their scheduled weeks', () => {
@@ -182,8 +187,8 @@ test('rejects unscheduled weeks and malformed assessment values', () => {
       studentId: '001',
       week: 3,
       dass_d: '2',
-      dass_a: 0,
-      dass_s: 6,
+      dass_a: -1,
+      dass_s: 22,
       cd_risc: 41,
       grit: -1,
     },
@@ -193,6 +198,34 @@ test('rejects unscheduled weeks and malformed assessment values', () => {
   for (const field of ['week', 'dass_d', 'dass_a', 'dass_s', 'cd_risc', 'grit']) {
     assert.ok(issueFields.includes(field));
   }
+});
+
+test('requires at least one observed log value and validates self timestamps', () => {
+  const empty = decodeLog({
+    documentId: 'empty_log',
+    data: {
+      studentId: '001',
+      date: '2026-05-12',
+      week: 1,
+      self: null,
+      buddy: null,
+      command: null,
+      physicalInjury: null,
+    },
+  });
+  const timestamp = decodeLog({
+    documentId: 'bad_timestamp',
+    data: {
+      studentId: '001',
+      date: '2026-05-12',
+      week: 1,
+      self: 2,
+      selfObservedAt: 'tomorrow',
+    },
+  });
+
+  assert.ok(fields(empty).includes('observations'));
+  assert.ok(fields(timestamp).includes('selfObservedAt'));
 });
 
 test('rejects arrays and non-object records without exposing raw data', () => {

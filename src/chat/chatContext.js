@@ -490,7 +490,7 @@ function latestDate(logs) {
 
 function metricRange(metric) {
   if (['self', 'buddy', 'command'].includes(metric)) return [1, 4];
-  if (['depression', 'anxiety', 'stress'].includes(metric)) return [1, 5];
+  if (['depression', 'anxiety', 'stress'].includes(metric)) return [0, 21];
   if (metric === 'cd_risc') return [0, 40];
   if (metric === 'grit') return [0, 32];
   return [-Infinity, Infinity];
@@ -556,9 +556,7 @@ function individualMetric(
         date: point.date,
         ...(Number.isFinite(point.week) ? { week: point.week } : {}),
         value: point[definition.field],
-        carriedForward: definition.field === 'buddy'
-          ? point.isBuddyCF === true
-          : definition.field === 'command' ? point.isCommandCF === true : false,
+        carriedForward: point[`is${definition.field[0].toUpperCase()}${definition.field.slice(1)}CF`] === true,
       })),
     };
   }
@@ -567,9 +565,7 @@ function individualMetric(
     metric,
     value: latest[definition.field],
     date: latest.date,
-    carriedForward: definition.field === 'buddy'
-      ? latest.isBuddyCF === true
-      : definition.field === 'command' ? latest.isCommandCF === true : false,
+    carriedForward: latest[`is${definition.field[0].toUpperCase()}${definition.field.slice(1)}CF`] === true,
   };
 }
 

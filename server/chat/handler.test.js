@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { DEFAULT_OPENROUTER_MODEL } from './chatModels.js';
-import { handleSentinelChat } from './index.js';
+import { handleSentinelChat } from './handler.js';
 
 const PROVIDER_MESSAGES = Object.freeze([
   { role: 'system', content: 'MINIMIZED_EVIDENCE\n{"metrics":[{"metric":"self","value":2}]}' },
@@ -133,6 +133,27 @@ function providerResponse(status, body) {
     json: async () => body,
   };
 }
+
+test('chat rejects a missing session with a stable no-store response', async () => {
+  const response = responseRecorder();
+  await handleSentinelChat(
+    requestFor(),
+    response,
+    dependenciesFor('summarize', {
+      authorize: async () => {
+        throw Object.assign(new Error('private token detail'), {
+          status: 401,
+          code: 'missing-auth',
+        });
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 401);
+  assert.deepEqual(response.body, { error: { code: 'missing-auth' } });
+  assert.equal(response.headers.get('Cache-Control'), 'private, no-store, max-age=0');
+  assert.doesNotMatch(JSON.stringify(response.body), /private token detail/);
+});
 
 function mockFetch(t, implementation) {
   const originalFetch = globalThis.fetch;

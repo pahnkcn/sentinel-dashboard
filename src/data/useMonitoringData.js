@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from 'react';
 
-import { createFirebaseMonitoringAdapter } from './firebaseMonitoringAdapter.js';
+import { createHttpMonitoringAdapter } from './httpMonitoringAdapter.js';
 import { createMonitoringDataStore } from './monitoringDataStore.js';
 
 const monitoringDataStore = createMonitoringDataStore(
-  createFirebaseMonitoringAdapter(),
+  createHttpMonitoringAdapter(),
 );
 
 export function useMonitoringData() {

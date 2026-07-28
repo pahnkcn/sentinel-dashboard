@@ -104,6 +104,20 @@ function readDate(value, field, issues) {
   return value;
 }
 
+function readOptionalTimestamp(value, field, issues) {
+  if (value === undefined || value === null || value === '') return null;
+  if (
+    typeof value !== 'string'
+    || value.length > 64
+    || !value.includes('T')
+    || !Number.isFinite(Date.parse(value))
+  ) {
+    issues.push(invalid(field, 'must be a valid ISO-8601 timestamp'));
+    return null;
+  }
+  return value;
+}
+
 function startRecord(documentId, data) {
   const issues = [];
   if (!isPlainObject(data)) {
@@ -159,19 +173,50 @@ export function decodeLog({ documentId, data }) {
   if (!record.data) return { ok: false, issues: record.issues };
 
   const { issues } = record;
+  const self = readNumber(record.data.self, 'self', issues, {
+    min: 1,
+    max: 4,
+    integer: true,
+    nullable: true,
+  });
+  const buddy = record.data.buddy === 0
+    ? null
+    : readNumber(record.data.buddy, 'buddy', issues, {
+        min: 1,
+        max: 4,
+        integer: true,
+        nullable: true,
+      });
+  const command = readNumber(record.data.command, 'command', issues, {
+    min: 1,
+    max: 4,
+    integer: true,
+    nullable: true,
+  });
+  const physicalInjury = readNumber(record.data.physicalInjury, 'physicalInjury', issues, {
+    min: 1,
+    max: 3,
+    integer: true,
+    nullable: true,
+  });
+  if (![self, buddy, command, physicalInjury].some(Number.isFinite)) {
+    issues.push(invalid('observations', 'must include at least one observed value'));
+  }
+
   return result({
     id: record.id,
     studentId: readIdentifier(record.data.studentId, 'studentId', issues),
     date: readDate(record.data.date, 'date', issues),
     week: readNumber(record.data.week, 'week', issues, { min: 1, max: 16, integer: true }),
-    self: readNumber(record.data.self, 'self', issues, { min: 1, max: 4, integer: true }),
-    buddy: readNumber(record.data.buddy, 'buddy', issues, { min: 1, max: 4, integer: true, nullable: true }),
-    command: readNumber(record.data.command, 'command', issues, { min: 1, max: 4, integer: true, nullable: true }),
-    physicalInjury: readNumber(record.data.physicalInjury, 'physicalInjury', issues, {
-      min: 1,
-      max: 3,
-      integer: true,
-    }),
+    self,
+    buddy,
+    command,
+    physicalInjury,
+    selfObservedAt: readOptionalTimestamp(
+      record.data.selfObservedAt,
+      'selfObservedAt',
+      issues,
+    ),
   }, issues);
 }
 
@@ -209,9 +254,9 @@ export function decodeAssessment({ documentId, data }) {
     id: record.id,
     studentId: readIdentifier(record.data.studentId, 'studentId', issues),
     week,
-    dass_d: readNumber(record.data.dass_d, 'dass_d', issues, { min: 1, max: 5 }),
-    dass_a: readNumber(record.data.dass_a, 'dass_a', issues, { min: 1, max: 5 }),
-    dass_s: readNumber(record.data.dass_s, 'dass_s', issues, { min: 1, max: 5 }),
+    dass_d: readNumber(record.data.dass_d, 'dass_d', issues, { min: 0, max: 21, integer: true }),
+    dass_a: readNumber(record.data.dass_a, 'dass_a', issues, { min: 0, max: 21, integer: true }),
+    dass_s: readNumber(record.data.dass_s, 'dass_s', issues, { min: 0, max: 21, integer: true }),
     cd_risc: cdRisc,
     grit,
     drawing_note: readString(record.data.drawing_note, 'drawing_note', issues, { maxLength: 2000 }),

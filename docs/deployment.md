@@ -171,8 +171,15 @@ server allowlist. Before each release, confirm every selectable model still
 supports strict structured output and has an endpoint available under Zero Data
 Retention routing.
 
+The Function now reads `monitoringManifests/current` and the bounded current
+`students` roster to enforce authoritative identifier redaction. Run it with a
+reviewed service account that can read those documents but cannot write
+monitoring data. Remember that Admin SDK access bypasses Firestore Security
+Rules; audit this IAM grant separately from the clinician client rules.
+
 Deploy the Function and verify signed-out, wrong-role, missing-App-Check,
-invalid-body, rate-limit, provider-failure, and authorized success paths:
+legacy-body, privacy-budget, roster-unavailable, dataset-mismatch, rate-limit,
+provider-failure, and authorized success paths:
 
 ```sh
 npx --yes firebase-tools@14.23.0 deploy \
@@ -229,12 +236,30 @@ Verify all of the following:
   clinician/admin users, and returns `Cache-Control: no-store`;
 - chat input stays disabled until the verified dataset is ready and while one
   response is in flight;
-- aggregate questions omit student detail, specific questions retrieve only
-  relevant detail, and future-dated records remain withheld;
+- provider-bound bodies contain no current roster name, student ID, room,
+  browser alias, evidence ID, dataset label, natural-language utterance, or
+  free-form history; provider-only aliases are reversed before the response is
+  returned; reject the legacy `messages`/`context` request shape and unknown
+  evidence fields;
+- aggregate series suppress groups below five, rankings contain no more than
+  five aliases, comparisons no more than three, and future-dated records remain
+  withheld;
+- follow-ups and model switching keep at most two sanitized turns in browser
+  memory but forward no free-form history to the provider; clearing, signing
+  out, readiness loss, or dataset rollover removes UI history, alias maps,
+  semantic state, and the evidence cache;
 - text, table, graph, prediction, provider error, and clear-conversation flows
   behave as reviewed;
-- each successful question produces one OpenRouter generation and returns the
-  strict UI schema;
+- exact lookups/counts, latest comparisons, window means, evidence-ordered
+  rankings, trends, supplied or unavailable forecasts, and unsupported causal
+  explanations return the strict UI schema with
+  `providerEgress: false`, zero provider bytes, and zero model tokens;
+- historical narrative synthesis sends derived statistics without weekly
+  points; numeric grounding and canonical artifacts constrain its response;
+- questions that require model synthesis make one bounded transport attempt,
+  visibly fall back to deterministic evidence on timeout/provider failure, may
+  retry invalid structured output once, and map provider billing exhaustion to
+  `chat-credit-exhausted` without retrying or fallback;
 - sign-out returns to the access gate and disconnects listeners;
 - response headers include CSP, HSTS, `nosniff`, frame denial, referrer policy,
   permissions policy, COOP, and CORP.

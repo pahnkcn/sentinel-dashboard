@@ -20,9 +20,12 @@ flowchart LR
   Analytics --> Overview["Overview screen"]
   Analytics --> Room["Room Status screen"]
   Analytics --> Individual["Individual screen"]
-  Analytics --> Context["Question-aware chat context"]
-  Context --> Function["Authenticated chat Function"]
-  Function --> Model["Allowlisted OpenRouter model / ZDR"]
+  Analytics --> Evidence["Alias-only evidence envelope"]
+  Evidence --> Function["Authenticated privacy gateway"]
+  Function --> Roster["Current manifest / roster check"]
+  Roster --> Policy["Evidence policy / deterministic analytics"]
+  Policy -->|"synthesis required"| Model["Allowlisted OpenRouter model / ZDR"]
+  Policy -->|"exact evidence answer"| Function
   Model --> Function
   Function --> Chat["Validated text / table / chart"]
 ```
@@ -148,28 +151,54 @@ new observation.
 
 ### Sentinel Analyst Module
 
-The authorized dashboard lazily loads the floating assistant. Its context
+The authorized dashboard lazily loads the floating assistant. Its evidence
 builder consumes the same Monitoring Analytics Interface and verified records
-as the workflow screens. Aggregate questions omit identifiable student
-profiles. Name, ID, room, ranking, and follow-up language selects only the
-relevant compact profiles; complete longitudinal detail is capped and included
-only for explicitly matched students. Future-dated observations remain
-withheld.
+as the workflow screens. It resolves names and rooms locally, assigns aliases
+that exist only for the current conversation, and emits only allowlisted
+numbers, dates, weeks, coverage, and alias references. Aggregate series require
+at least five contributors. Rankings contain at most five aliases, comparisons
+at most three, and free-text notes and raw profiles are never part of evidence.
+Future-dated observations remain withheld.
 
 Prediction requests use a deterministic, bounded ordinary-least-squares trend
-computed in the browser from verified points. The model may explain or chart
-that projection but is instructed not to invent another forecast. This is
-exploratory decision support, not clinical diagnosis.
+computed in the browser from verified points. The Function validates and
+renders supplied forecast points without asking the model to recalculate or
+qualitatively grade their magnitude. This is exploratory decision support, not
+clinical diagnosis.
 
 The browser never receives the OpenRouter key. It sends a Firebase ID token,
-App Check token, bounded conversation, and question-aware context to the
-same-origin `/api/chat` Function. The Function repeats verified-email and exact
-role authorization, checks the requested model against the six-model allowlist,
-and applies a per-instance request limit. It calls the selected OpenRouter model
-with the relevant verified context, a strict JSON schema, and ZDR provider
-routing. The response is normalized to a fixed text,
-highlight, table, and chart shape before React renders it. Chat history stays
-in component memory and is cleared on sign-out or page close.
+App Check token, a redacted current utterance, enumerated semantic state with no
+free-form history, and a strict evidence envelope to the same-origin `/api/chat`
+Function.
+The Function repeats verified-email and exact-role authorization, checks the
+requested model against the six-model allowlist, and applies separate
+per-instance endpoint and provider request limits. Local-only answers consume
+only the broader endpoint bucket. It rejects unknown fields and the former arbitrary conversation
+and context blobs, verifies the current dataset manifest, loads only the bounded
+current student roster, redacts any remaining known name, ID, or room, then
+builds a provider request from the intent, allowlisted state fields, and numeric
+evidence only. It omits the natural-language utterance, prior free-form turns,
+dataset label, and evidence ID; remaps browser aliases to provider-only aliases;
+and scans the final body against the authoritative roster before egress. Only
+then does it call the selected OpenRouter model with ZDR routing and the
+structured-response schema. No stable user identifier is forwarded to the
+provider. Before provider egress, the Function recognizes exact lookups,
+counts, comparisons, window means, rankings, trends, supplied or unavailable
+forecasts, and requests for unsupported causal explanations that can be
+answered safely from verified numbers alone. Those routes return a canonical
+response locally with zero provider bytes. Historical narrative synthesis sends
+only server-derived first/last/min/max, mean/change/slope and point counts, not
+weekly points. Provider-routed responses are schema-normalized, checked against
+the disclosed numeric facts, and aligned against canonical artifacts; tables,
+charts, ranking order, forecast artifacts, response status, and limitations are
+corrected deterministically before display. A slow or invalid provider response
+falls back to a visibly labeled evidence-only answer, except HTTP 402, which is
+returned unchanged. The Function reverses its
+provider-only alias mapping, then React restores display names locally and
+shows a disclosure receipt. UI
+history, semantic state, alias maps, and the small evidence cache stay in memory
+and clear together on reset, sign-out, dataset rollover, readiness loss, or page
+close.
 
 ## Dependency rules
 

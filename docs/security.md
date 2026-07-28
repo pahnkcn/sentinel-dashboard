@@ -8,10 +8,13 @@ administrative credentials are privileged security data. Availability and
 freshness also matter because partial or future-leaking data can produce unsafe
 monitoring decisions.
 
-Sentinel Analyst may transmit a question-specific subset of this sensitive data
-to OpenRouter and its selected model provider. Deployment owners must approve
-that processing and the applicable data-residency, contractual, and clinical
-policies before enabling the Function in a real environment.
+Sentinel Analyst may transmit a question-specific, alias-only subset of numeric
+health evidence to OpenRouter and its selected model provider. Names, student
+IDs, room names, demographics, free-text notes, raw records, and the full
+transcript are excluded. Pseudonymized health values remain sensitive, so
+deployment owners must approve that processing and the applicable
+data-residency, contractual, and clinical policies before enabling the Function
+in a real environment.
 
 ## Trust boundaries
 
@@ -46,10 +49,12 @@ policies before enabling the Function in a real environment.
 | Automated abuse | Required reCAPTCHA Enterprise App Check for remote builds and CSP support |
 | Accidental local access to live data | No fallback config; Vite `command`/`isPreview`, not user-selectable mode names, force every actual dev server to localhost emulators |
 | OpenRouter key exposure | Secret Manager-bound Function secret; no `VITE_*` key and no direct browser request |
-| Unauthorized AI access | Function verifies ID token, verified email, exact clinical role, App Check, request method, body size, and request rate |
-| Excessive AI disclosure | Question-aware context defaults to aggregates and includes identifiable detail only for relevant people/rooms |
+| Unauthorized AI access | Function verifies ID token, verified email, exact clinical role, App Check, request method, body size, a broad endpoint rate, and a separate provider-only rate |
+| Excessive AI disclosure | Exact evidence schema, per-intent privacy budgets, conversation-scoped browser aliases, provider-only alias remapping, local-only free-form history, minimum aggregate size of five, authoritative roster redaction, and a final roster-aware provider-body assertion |
+| Client-supplied arbitrary AI context | Function rejects unknown fields and the legacy `messages`/`context` shape; the natural-language utterance and prior turns are removed before provider egress, so only a canonical intent plus allowlisted aliases, metrics, numbers, dates, coverage, and constraints can reach the provider |
+| Cross-provider user linkage | No Firebase UID or stable UID hash is included in provider requests; rate limiting uses UID only inside the Function instance |
 | Provider retention or training | Every request requires `data_collection: "deny"` and `zdr: true`; deployment policy must also keep OpenRouter input/output logging disabled |
-| Hallucinated or unsafe output | Fixed system policy, strict structured-output schema, server normalization, visible coverage/method notes, and no write/action tools |
+| Hallucinated or unsafe output | Fixed system policy, strict structured-output schema, numeric-grounding checks, canonical table/chart and comparison/ranking/trend/forecast guards, repair-chatter rejection, a visible evidence-only provider fallback, status/limitations/coverage/method notes, and no write/action tools |
 
 Unit tests cover claim classification, safe Auth error reporting, hosting
 headers, decoding, server-snapshot verification, subscription lifecycle, and
@@ -92,11 +97,25 @@ that cannot reconstruct individuals. See ADR 0005.
 ## Residual constraints
 
 - Sensitive records remain in memory while an authorized dashboard is open.
-- Relevant sensitive records leave the Firebase environment for one OpenRouter
-  model. ZDR reduces retention but does not remove the need for legal,
-  organizational, and provider review.
-- The in-memory request limiter is an abuse guard, not a globally exact quota;
-  set OpenRouter key budgets and platform-level controls as the cost boundary.
+- Minimal pseudonymized health metrics may leave the Firebase environment only
+  when the request needs model synthesis; exact evidence operations stay in the
+  Function and report zero provider egress. ZDR reduces retention but does not remove the need for
+  legal, organizational, and provider review. A private/on-premises model is
+  required when policy prohibits even pseudonymized health-value egress.
+- Numeric evidence is derived in the authorized browser from server-confirmed
+  records. The Function validates its disclosure shape and checks identifiers
+  against the authoritative current roster, but it does not recompute all
+  analytics from the 28,000-record log stream. Treat evidence integrity as a
+  client-derived input until analytics move to a controlled backend.
+- Roster redaction covers current names, IDs, and rooms plus common email,
+  phone, national-ID, and labeled-note patterns. Unregistered nicknames and
+  unlabeled narratives cannot be recognized reliably by deterministic DLP, so
+  the gateway never forwards any natural-language question or prior free-form
+  turn to the model provider. Staff must still not paste unrelated clinical
+  notes because the same-origin Function receives the redacted question.
+- The two in-memory request limiters are per-instance abuse guards, not globally
+  exact quotas; set OpenRouter key budgets and platform-level controls as the
+  cost boundary. Local-only answers use only the broader endpoint bucket.
 - Session persistence limits saved Auth state to the current tab, but it is not
   an inactivity timeout. Staff must lock managed devices and close the tab or
   sign out when leaving the workstation.

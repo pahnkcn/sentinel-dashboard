@@ -9,13 +9,19 @@ const ERROR_MESSAGES = Object.freeze({
   'chat-invalid-answer': 'โมเดลส่งคำตอบไม่สมบูรณ์ กรุณาลองถามอีกครั้ง',
   'chat-timeout': 'การวิเคราะห์ใช้เวลานานเกินไป กรุณาลองถามให้แคบลง',
   'chat-busy': 'ระบบวิเคราะห์กำลังมีผู้ใช้งานมาก กรุณารอสักครู่แล้วลองใหม่',
+  'chat-credit-exhausted': 'เครดิตของบริการวิเคราะห์หมดแล้ว กรุณาเติมเครดิตก่อนใช้งานต่อ',
   'chat-unavailable': 'ไม่สามารถรับคำตอบจากระบบวิเคราะห์ได้ในขณะนี้',
   'rate-limited': 'ส่งคำถามถี่เกินไป กรุณารอสักครู่ก่อนถามอีกครั้ง',
+  'provider-rate-limited': 'ส่งคำถามที่ต้องใช้โมเดลถี่เกินไป กรุณารอสักครู่ โดยคำถามที่ตอบจากข้อมูลในระบบยังใช้งานได้',
   'invalid-auth': 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
   'missing-auth': 'ไม่พบเซสชันผู้ใช้ กรุณาเข้าสู่ระบบใหม่',
   forbidden: 'บัญชีนี้ไม่มีสิทธิ์ใช้งานผู้ช่วยวิเคราะห์',
   'invalid-app-check': 'ไม่สามารถยืนยันแอปได้ กรุณารีเฟรชหน้าแล้วลองใหม่',
   'missing-app-check': 'ไม่สามารถยืนยันแอปได้ กรุณารีเฟรชหน้าแล้วลองใหม่',
+  'privacy-sensitive-data': 'ระบบหยุดคำขอนี้เพราะพบข้อมูลระบุตัวตนที่ยังไม่ได้ปกปิด',
+  'privacy-budget-exceeded': 'คำถามนี้ต้องใช้ข้อมูลมากกว่าเพดานความเป็นส่วนตัว กรุณาถามให้แคบลง',
+  'privacy-dataset-mismatch': 'ข้อมูลมีเวอร์ชันใหม่ กรุณารอให้แดชบอร์ดซิงก์แล้วลองอีกครั้ง',
+  'privacy-roster-unavailable': 'ยังไม่สามารถตรวจสอบการปกปิดข้อมูลได้ กรุณาลองใหม่',
 });
 
 function publicError(code) {
@@ -26,7 +32,14 @@ function publicError(code) {
   return error;
 }
 
-export async function askSentinelAssistant({ messages, context, model, signal }) {
+export async function askSentinelAssistant({
+  utterance,
+  conversationState,
+  analysisRequest,
+  evidence,
+  model,
+  signal,
+}) {
   const user = auth.currentUser;
   if (!user) throw publicError('missing-auth');
 
@@ -43,7 +56,7 @@ export async function askSentinelAssistant({ messages, context, model, signal })
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ model, messages, context }),
+    body: JSON.stringify({ model, utterance, conversationState, analysisRequest, evidence }),
     signal,
   });
   const body = await response.json().catch(() => null);
@@ -54,6 +67,8 @@ export async function askSentinelAssistant({ messages, context, model, signal })
   if (
     typeof body?.payload?.answer !== 'string'
     || !['high', 'medium', 'low'].includes(body?.payload?.confidence)
+    || !['answered', 'partial', 'insufficient'].includes(body?.payload?.status)
+    || !Array.isArray(body?.payload?.limitations)
   ) {
     throw publicError('chat-unavailable');
   }

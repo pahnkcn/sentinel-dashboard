@@ -124,19 +124,48 @@ in [CONTEXT.md](CONTEXT.md).
 
 The floating assistant appears only after an authorized user opens the
 dashboard. It works from the same verified, fail-closed dataset as the three
-workflow screens. General questions receive aggregate context; student and room
-details are selected only when a question requires them. The user can choose
+workflow screens. Before a request leaves Firebase, the browser replaces known
+student and room identifiers with conversation-scoped aliases and builds a
+strict, question-specific evidence envelope. Aggregate series require at least
+five contributors; ranking is capped at five aliases; individual comparisons
+are capped at three; and free-text notes, names, IDs, demographics, raw records,
+and the full transcript are excluded. The user can choose
 GLM 5.2, Qwen 3.7 Plus, MiMo V2.5, DeepSeek V4 Pro, MiniMax M3, or Kimi K2.7
-Code. The selected OpenRouter model receives that question-aware context and
-returns a strict structured response for validated text, tables, and Recharts visualizations.
-Exploratory predictions use a bounded linear trend and are always labeled as
-decision support rather than diagnosis.
+Code. The selected OpenRouter model receives only a canonical intent, enumerated
+semantic state, and minimized evidence. The natural-language question, prior
+free-form turns, and internal dataset label are not forwarded to the provider.
+The model returns a strict structured response for validated text, tables, and
+Recharts visualizations. The UI restores aliases locally and shows a
+per-response disclosure receipt. Latest lookups and counts, bounded latest
+comparisons, window means, supplied or unavailable forecasts, non-causal trend
+explanations, high-dimensional trend tables, and evidence-ordered rankings are
+answered deterministically inside the Function when no model synthesis is
+needed. Those responses report `providerEgress: false`, zero provider bytes,
+and zero model tokens. An explicitly requested historical narrative can use the
+model, but weekly points are replaced by server-computed first/last/min/max,
+mean/change/slope and point counts before egress. Exploratory predictions use a
+bounded linear trend and are always labeled as decision support rather than
+diagnosis.
 
 OpenRouter is called only from the authenticated Cloud Function. Every remote
 request requires a verified Firebase ID token, an allowed clinical role, and a
-valid App Check token. The request requires structured-output support,
-disallows data-collecting providers, and enforces a Zero Data Retention
-endpoint.
+valid App Check token. The Function rejects the former arbitrary `context` and
+`messages` payloads, validates exact evidence fields and privacy budgets, checks
+the current manifest and authoritative student roster, redacts any remaining
+known name/ID/room, removes free-form text and the dataset label from the
+provider request, remaps browser aliases to provider-only aliases, and scans the
+final provider body against the authoritative roster before egress. Provider
+aliases are mapped back locally at the Function boundary. Requests
+require structured-output support, disallow data-collecting providers, and
+enforce a Zero Data Retention endpoint. No stable user identifier is forwarded
+to the model provider. A 30-request endpoint bucket protects Auth, validation,
+and roster work while a separate eight-request provider bucket does not charge
+local-only answers. Model summaries make one bounded transport attempt and use
+a visibly labeled deterministic evidence fallback on timeout or provider
+failure; invalid structured output may be retried once. Numeric grounding and
+canonical table/chart guards replace ungrounded model facts. Billing exhaustion
+is never retried or hidden by fallback and is returned as
+`chat-credit-exhausted`.
 
 Administrative imports and fixture generation deliberately do not exist in
 this client. Put those operations in separately authorized server-side tooling

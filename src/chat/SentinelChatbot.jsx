@@ -28,8 +28,9 @@ import {
 } from 'lucide-react';
 
 import { askSentinelAssistant } from './chatApi.js';
-import { createChatContext } from './chatContext.js';
+import { createAnalysisRequest, createEvidenceEnvelope } from './chatContext.js';
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL } from './chatModels.js';
+import { createConversationPrivacy, createDisclosureReceipt } from './chatPrivacy.js';
 import { getChatConnectionPresentation } from './chatStatus.js';
 import { MODEL_LOGOS } from './modelLogos.js';
 
@@ -51,6 +52,23 @@ const CONFIDENCE_LABELS = Object.freeze({
   high: 'ข้อมูลรองรับสูง',
   medium: 'ข้อมูลรองรับปานกลาง',
   low: 'ข้อมูลรองรับจำกัด',
+});
+const RESPONSE_STATUS = Object.freeze({
+  answered: { label: 'ตอบได้ครบ', className: 'bg-emerald-100 text-emerald-700' },
+  partial: { label: 'ตอบได้บางส่วน', className: 'bg-amber-100 text-amber-700' },
+  insufficient: { label: 'หลักฐานไม่พอ', className: 'bg-rose-100 text-rose-700' },
+});
+const LIMITATION_LABELS = Object.freeze({
+  'insufficient-evidence': 'หลักฐานไม่เพียงพอ',
+  'forecast-unavailable': 'ไม่มีหลักฐานคาดการณ์',
+  'small-group-suppressed': 'ปกปิดกลุ่มขนาดเล็ก',
+  'metric-omitted-by-privacy-budget': 'ตัดบางตัวชี้วัดตามเพดานความเป็นส่วนตัว',
+  'time-window-unavailable': 'ช่วงเวลาที่ขอไม่มีในหลักฐาน',
+  'aggregate-only': 'มีเฉพาะข้อมูลรวม',
+  'no-causal-evidence': 'ไม่มีหลักฐานเชิงสาเหตุ',
+  'carried-forward-present': 'มีค่าที่นำมาจากครั้งก่อน',
+  'requested-output-unavailable': 'ไม่สามารถสร้างรูปแบบผลลัพธ์ที่ขอได้ครบ',
+  'provider-fallback': 'ใช้คำตอบสำรองจากหลักฐานในระบบ เพราะโมเดลภายนอกไม่พร้อมตอบ',
 });
 
 function TypingIndicator() {
@@ -204,6 +222,11 @@ function AssistantTable({ table }) {
 
 function AssistantMessage({ message, disabled, onFollowUp }) {
   const { payload } = message;
+  const disclosure = message.disclosureReceipt;
+  const redactionCount = Math.max(
+    disclosure?.redactionCount ?? 0,
+    disclosure?.redactions?.length ?? 0,
+  );
 
   return (
     <article className="chat-message-enter w-full min-w-0 self-start">
@@ -232,13 +255,51 @@ function AssistantMessage({ message, disabled, onFollowUp }) {
             </div>
           )}
 
+          {payload.limitations?.length > 0 && (
+            <p className="mt-2 text-[10px] leading-4 text-amber-700">
+              ข้อจำกัด: {payload.limitations.map(item => LIMITATION_LABELS[item] ?? item).join(' · ')}
+            </p>
+          )}
+
           <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 border-t border-slate-100 pt-2.5 text-[10px] text-slate-400">
+            {RESPONSE_STATUS[payload.status] && (
+              <span className={`rounded-full px-2 py-1 font-bold ${RESPONSE_STATUS[payload.status].className}`}>
+                {RESPONSE_STATUS[payload.status].label}
+              </span>
+            )}
             <span className="rounded-full bg-slate-100 px-2 py-1 font-bold text-slate-600">
               {CONFIDENCE_LABELS[payload.confidence]}
             </span>
             <span className="min-w-0 break-all">{message.model}</span>
             {message.totalTokens && <span className="break-words">· {message.totalTokens.toLocaleString('th-TH')} tokens</span>}
           </div>
+          {disclosure && (
+            <details className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-[10px] text-emerald-800">
+              <summary className="cursor-pointer font-bold">
+                {disclosure.providerEgress === false
+                  ? 'คำนวณจากหลักฐานในเซิร์ฟเวอร์ · ไม่ส่งข้อมูลไปยังผู้ให้บริการโมเดล'
+                  : `ส่งหลักฐานแบบนามแฝง ${disclosure.providerAttemptCount ?? 1} ครั้ง · ไม่ส่งชื่อ/รหัสจาก roster · รวมข้อความหลักฐาน ${(disclosure.byteCount / 1024).toFixed(1)} KB`}
+              </summary>
+              <p className="mt-1 leading-4 text-emerald-700">
+                บุคคลแบบนามแฝง {disclosure.subjectCount} ราย · ห้องแบบนามแฝง {disclosure.roomCount} ห้อง · {disclosure.metricCount ?? 0} ชุดข้อมูล ({disclosure.uniqueMetricCount ?? disclosure.metricCount ?? 0} ตัวชี้วัดไม่ซ้ำ) · {disclosure.evidencePointCount ?? disclosure.observedPointCount ?? 0} จุดหลักฐาน · สังเกตจริง {disclosure.observedPointCount ?? 0} จุด
+                {(disclosure.carriedForwardPointCount ?? 0) > 0
+                  ? ` · carried-forward ${disclosure.carriedForwardPointCount} จุด`
+                  : ''}
+                {(disclosure.forecastPointCount ?? 0) > 0
+                  ? ` · forecast ${disclosure.forecastPointCount} จุด`
+                  : ''}
+                {' · ไม่ส่งประวัติข้อความ'}
+                {redactionCount > 0
+                  ? ` · ปกปิดข้อมูลเพิ่ม ${redactionCount} รายการ`
+                  : ''}
+              </p>
+              {disclosure.coverage?.from && disclosure.coverage?.to && (
+                <p className="mt-1 leading-4 text-emerald-700">
+                  ช่วงหลักฐาน {disclosure.coverage.from} ถึง {disclosure.coverage.to}
+                </p>
+              )}
+            </details>
+          )}
         </div>
       </div>
 
@@ -265,7 +326,6 @@ export default function SentinelChatbot({
   analytics,
   students,
   logs,
-  assessments,
   dataStatus,
   datasetVersion,
   lastUpdatedAt,
@@ -281,8 +341,11 @@ export default function SentinelChatbot({
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const abortRef = useRef(null);
+  const datasetVersionRef = useRef(datasetVersion);
+  const availabilityRef = useRef(dataStatus === 'ready');
   const modelMenuRef = useRef(null);
   const modelButtonRef = useRef(null);
+  const [privacy] = useState(() => createConversationPrivacy());
   const available = dataStatus === 'ready';
   const activeModel = CHAT_MODELS.find(model => model.id === selectedModel)
     ?? CHAT_MODELS[0];
@@ -292,7 +355,27 @@ export default function SentinelChatbot({
     apiState,
   });
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    privacy.clear();
+  }, [privacy]);
+
+  useEffect(() => {
+    const datasetChanged = datasetVersionRef.current !== datasetVersion;
+    const lostReadiness = availabilityRef.current && !available;
+    datasetVersionRef.current = datasetVersion;
+    availabilityRef.current = available;
+    if (!datasetChanged && !lostReadiness) return;
+
+    abortRef.current?.abort();
+    abortRef.current = null;
+    privacy.clear();
+    setMessages([]);
+    setInput('');
+    setError(null);
+    setPending(false);
+    setApiState('unverified');
+  }, [available, datasetVersion, privacy]);
 
   useEffect(() => {
     if (!modelMenuOpen) return undefined;
@@ -342,24 +425,56 @@ export default function SentinelChatbot({
       role: 'user',
       content: question,
     };
-    const apiMessages = [
-      ...messages
-        .filter(message => message.role === 'user' || message.role === 'assistant')
-        .map(message => ({
-          role: message.role,
-          content: message.role === 'assistant' ? message.payload.answer : message.content,
-        })),
-      { role: 'user', content: question },
-    ].slice(-12);
-    const context = createChatContext({
+    const prepared = privacy.prepareUtterance(question, students);
+    if (prepared.ambiguousNames.length > 0) {
+      setError(`พบชื่อซ้ำใน roster (${prepared.ambiguousNames.join(', ')}) กรุณาระบุรหัสประจำตัวเพื่อเลือกบุคคลให้ชัดเจน`);
+      return;
+    }
+    const previousState = privacy.snapshot();
+    const evidenceId = privacy.nextEvidenceId();
+    const evidence = createEvidenceEnvelope({
+      evidenceId,
       analytics,
       students,
       logs,
-      assessments,
       datasetVersion,
       lastUpdatedAt,
       question,
-      conversation: apiMessages,
+      prepared,
+      aliases: privacy.aliases,
+      previousState,
+    });
+    const analysisRequest = createAnalysisRequest({
+      question,
+      evidence,
+      prepared,
+      previousState,
+    });
+    if (analysisRequest.referent.status === 'ambiguous') {
+      setError('คำถามนี้อ้างถึงหลายคนหรือหลายห้อง กรุณาระบุชื่อ รหัส หรือนามแฝงที่ต้องการให้ชัดเจน');
+      return;
+    }
+    const requestBody = {
+      model: selectedModel,
+      utterance: prepared.utterance,
+      conversationState: {
+        ...previousState,
+        // Free-form history stays in this browser. Only enumerated semantic state crosses the boundary.
+        recentTurns: [],
+      },
+      analysisRequest,
+      evidence,
+    };
+    try {
+      privacy.assertOutboundSafe(requestBody);
+    } catch {
+      setError('ระบบหยุดการส่งคำถามนี้ เพราะตรวจพบข้อมูลระบุตัวตนที่ยังไม่ได้ปกปิด');
+      return;
+    }
+    const disclosureReceipt = createDisclosureReceipt({
+      body: requestBody,
+      evidence,
+      redactions: prepared.redactions,
     });
 
     setMessages(current => [...current, userMessage]);
@@ -372,19 +487,38 @@ export default function SentinelChatbot({
 
     try {
       const response = await askSentinelAssistant({
-        model: selectedModel,
-        messages: apiMessages,
-        context,
+        ...requestBody,
         signal: controller.signal,
+      });
+      privacy.rememberEvidence(evidence);
+      privacy.commitTurn({
+        utterance: prepared.utterance,
+        answer: response.payload.answer,
+        evidenceId,
+        intent: evidence.intent,
+        subjectAliases: evidence.subjects.map(subject => subject.alias),
+        roomAliases: evidence.rooms.map(room => room.alias),
+        metrics: [...new Set([
+          ...evidence.metrics.map(metric => metric.metric),
+          ...evidence.subjects.flatMap(subject => subject.metrics.map(metric => metric.metric)),
+          ...evidence.rooms.flatMap(room => room.metrics.map(metric => metric.metric)),
+        ])],
+        dateRange: evidence.coverage.from && evidence.coverage.to
+          ? { from: evidence.coverage.from, to: evidence.coverage.to }
+          : null,
       });
       setMessages(current => [
         ...current,
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          payload: response.payload,
+          payload: privacy.restoreAssistantPayload(response.payload),
           model: response.model,
           totalTokens: response.usage?.totalTokens ?? null,
+          disclosureReceipt: {
+            ...disclosureReceipt,
+            ...response.disclosureReceipt,
+          },
         },
       ]);
       setApiState('online');
@@ -396,8 +530,10 @@ export default function SentinelChatbot({
         setError(requestError?.message || 'ไม่สามารถวิเคราะห์ข้อมูลได้ กรุณาลองใหม่');
       }
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setPending(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setPending(false);
+      }
     }
   }
 
@@ -419,6 +555,7 @@ export default function SentinelChatbot({
 
   function clearConversation() {
     if (pending) return;
+    privacy.clear();
     setMessages([]);
     setError(null);
     setInput('');
@@ -707,7 +844,7 @@ export default function SentinelChatbot({
             <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 text-[9px] text-slate-400">
               <span className="flex items-center gap-1">
                 <LockKeyhole size={10} />
-                ไม่บันทึกประวัติในเครื่อง · ส่งเฉพาะบริบทที่เกี่ยวข้อง
+                เก็บบทสนทนาเฉพาะในหน่วยความจำ · ใช้นามแฝง · อย่าวางบันทึกสุขภาพ
               </span>
               <span>Enter ส่ง · Shift+Enter ขึ้นบรรทัด</span>
             </div>

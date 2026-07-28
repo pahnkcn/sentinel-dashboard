@@ -88,6 +88,20 @@ OPENROUTER_SITE_URL
 all variables except `VITE_GOOGLE_CLIENT_ID` server-only. Scope production GCP
 and OpenRouter values to Production, not Preview or Development.
 
+For Preview, set only the Google login pair and an independent session secret:
+
+```text
+VITE_GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_ID
+SESSION_SECRET
+```
+
+The two client IDs must match. Do not configure `GCP_PROJECT_ID`, the remaining
+GCP Workload Identity variables, `OPENROUTER_API_KEY`, or
+`FIRESTORE_EMULATOR_HOST` for Preview. This guarantees that a Preview cannot
+read Production Firestore or call the production model provider even if its
+application access gate is bypassed.
+
 In Project Settings > Deployment Protection, enable Vercel Authentication with
 Standard Protection. This protects preview deployments on Hobby; production
 still relies on the application GIS access gate. Configure a Vercel WAF rate
@@ -166,6 +180,22 @@ all outstanding Sentinel sessions must be invalidated immediately.
 
 ## 7. Pre-deployment gate
 
+The recommended helper runs this gate sequentially, fails before deployment on
+the first error, scans `dist` for Firebase browser code, and scans the complete
+`.vercel/output` tree for key material and known local/target secret values:
+
+```sh
+npm run deploy:check
+```
+
+Review the exact plan without running it:
+
+```sh
+npm run deploy:check -- --dry-run
+```
+
+The underlying manual commands remain:
+
 ```sh
 npm ci
 npm test
@@ -182,8 +212,19 @@ material, `SESSION_SECRET`, or `OPENROUTER_API_KEY`.
 Run a local smoke test with the Firestore emulator:
 
 ```sh
-npx vercel link
-npx vercel pull
+cp .env.development.example .env.local
+npm run deploy:local -- --email clinician@example.com --end-date 2026-07-28
+```
+
+This command uses `vercel dev --local`, so it does not create or change a Vercel
+project link. It owns and cleans up the Emulator and Vercel Dev process trees, seeds
+only `demo-sentinel-dashboard` on `127.0.0.1:8080`, provisions the supplied
+email only in that emulator, and verifies that the signed-out session endpoint
+returns `401` with `Cache-Control: private, no-store`.
+
+The equivalent manual sequence is:
+
+```sh
 cp .env.development.example .env.local
 npm run emulators
 npm run emulators:seed -- --end-date 2026-07-28
@@ -199,6 +240,27 @@ user when provisioning the emulator allowlist.
 
 Create a protected preview first, then promote the reviewed commit to
 Production. Verify:
+
+```sh
+npx vercel link
+npm run deploy:preview
+npm run deploy:production -- --confirm-project YOUR_LINKED_VERCEL_PROJECT_NAME
+```
+
+Both deployment commands require an existing valid `.vercel/project.json` and
+never auto-link or create a Vercel project. They pull and validate the exact
+target environment, pin every Vercel command to the linked project ID, require
+a clean Git tree, and repeat the link/tree/artifact checks after building.
+Production also requires Node 22 and exact confirmation matching the linked
+Vercel project name or ID. Neither command
+publishes Firestore data, provisions remote users, deploys Firestore Rules, or
+runs `gcloud`; those remain separate audited operator workflows.
+
+Before the deployment commands, `.vercelignore` prevents local env files,
+generated data, source workbooks, logs, and common credential files from being
+uploaded. The helper also rejects tracked sensitive artifacts independently.
+
+Then verify:
 
 - signed-out visitors see only the Access Gate;
 - an invalid, expired, wrong-audience, unverified, absent, disabled, or

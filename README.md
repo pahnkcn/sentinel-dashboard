@@ -27,6 +27,55 @@ Firestore Security Rules deny every client read and write.
 See [architecture](docs/architecture.md), [security](docs/security.md), and the
 [deployment runbook](docs/deployment.md) for the full design.
 
+## Deployment helper
+
+`scripts/deploy-helper.mjs` provides one guarded, cross-platform workflow for
+local testing and Vercel deployments. It passes every argument directly to npm
+without constructing shell command strings, and it never publishes a remote
+Firestore dataset or provisions a remote user.
+
+```powershell
+npm run deploy:help
+```
+
+Show the exact local workflow without starting a process:
+
+```powershell
+npm run deploy:local -- --email clinician@example.com --end-date 2026-07-28 --dry-run
+```
+
+Start the Firestore Emulator, seed synthetic schema-v2 data, provision that
+email only in the emulator, start `vercel dev --local`, run the signed-out
+session smoke test, and keep both services open until Ctrl+C:
+
+```powershell
+npm run deploy:local -- --email clinician@example.com --end-date 2026-07-28
+```
+
+The local command requires a completed `.env.local`, forces project
+`demo-sentinel-dashboard` and host `127.0.0.1:8080`, and refuses occupied
+ports. It does not require a linked Vercel project.
+
+Remote commands require an existing `.vercel/project.json`, created manually
+with `npx vercel link`. The helper then pulls and validates the exact Preview or
+Production environment before building:
+
+```powershell
+npm run deploy:check
+npm run deploy:preview
+npm run deploy:production -- --confirm-project sentinel-dashboard
+```
+
+`deploy:check` performs tests, lint, Vite/Vercel builds, and bundle safety scans
+without deploying. `deploy:preview` runs the same gate before a prebuilt Preview
+deployment. Both deployment modes require a clean Git tree and recheck it after
+the build; `deploy:production` additionally requires Node 22 and an exact linked
+project name or ID. Use `--dry-run` with any command to print its command plan
+without starting or deploying.
+
+`.vercelignore` excludes local environment files, generated datasets,
+workbooks, logs, and common credential-file formats from Vercel CLI uploads.
+
 ## Local development
 
 Requirements: Node.js 22.x, a Google OAuth web client for localhost, Java for the
@@ -49,6 +98,12 @@ npm run auth:provision -- --email clinician@example.com --role clinician --proje
 npm run dev:vercel
 ```
 
+The equivalent automated workflow is:
+
+```powershell
+npm run deploy:local -- --email clinician@example.com --end-date 2026-07-28
+```
+
 The emulator guard accepts only a loopback host and a Firebase project ID that
 starts with `demo-`. Local seed records are synthetic schema v2 records.
 Use an email that belongs to the localhost Google OAuth client test users.
@@ -65,6 +120,11 @@ Copy `.env.example` into Vercel project settings, not into source control.
 - `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, and `OPENROUTER_SITE_URL` are
   server-only. Store the key as an encrypted Vercel environment variable.
 - `VERCEL_OIDC_TOKEN` is issued by Vercel; never enter or persist it manually.
+
+For a protected Preview, configure only `VITE_GOOGLE_CLIENT_ID`, the matching
+`GOOGLE_CLIENT_ID`, and a Preview-specific `SESSION_SECRET`. Do not scope GCP
+runtime identity variables or `OPENROUTER_API_KEY` to Preview. The deployment
+helper validates this separation after its target-specific `vercel pull`.
 
 Do not add `VITE_FIREBASE_*`, a Firebase service-account key, or any server
 secret to a Vite-prefixed variable.
@@ -139,6 +199,11 @@ npm run build
 npm run vercel:build
 ```
 
+After linking the intended Vercel project, the guarded equivalent is:
+
+```powershell
+npm run deploy:check
+```
+
 Rules tests require the Firestore emulator. Deployment acceptance also includes
-an `npm run dev:vercel` smoke test after `vercel link`/`vercel pull` and the
-checks in the deployment runbook.
+an `npm run deploy:local` smoke test and the checks in the deployment runbook.

@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 .generated/
+.vercel/
 
 # Local environment overrides
 .env

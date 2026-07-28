@@ -1,0 +1,22 @@
+# Local and generated data must never be uploaded by the Vercel CLI.
+.env
+.env.*
+.generated/
+.firebase/
+node_modules/
+
+# Trusted workbooks and credential-like files stay outside deployments.
+**/*.xlsx
+**/*.xls
+**/*.xlsm
+**/*.xlsb
+**/*.pem
+**/*.p12
+**/*.pfx
+**/*.key
+**/*service-account*.json
+**/*private-key*.json
+**/*credentials*.json
+
+# Emulator and package-manager diagnostics.
+*.log

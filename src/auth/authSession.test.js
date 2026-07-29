@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createGoogleIdentityConfigurator,
   createLoginCsrfToken,
   destroyAuthSession,
   exchangeGoogleCredential,
@@ -109,4 +110,29 @@ test('logs out through the session API and validates browser configuration', asy
   assert.equal(request.options.credentials, 'same-origin');
   assert.equal(getGoogleClientId({ VITE_GOOGLE_CLIENT_ID: ' client-id ' }), 'client-id');
   assert.match(createLoginCsrfToken({ getRandomValues: bytes => bytes.fill(2) }), /^[a-f0-9]{64}$/);
+});
+
+test('configures GIS once while replacing the active credential handler', () => {
+  const initializeCalls = [];
+  const identity = {
+    initialize(options) {
+      initializeCalls.push(options);
+    },
+    renderButton() {},
+  };
+  const configurator = createGoogleIdentityConfigurator();
+  const received = [];
+  const releaseFirst = configurator.configure(identity, {
+    clientId: 'client.apps.googleusercontent.com',
+    onCredential: credential => received.push(`first:${credential}`),
+  });
+  releaseFirst();
+  configurator.configure(identity, {
+    clientId: 'client.apps.googleusercontent.com',
+    onCredential: credential => received.push(`second:${credential}`),
+  });
+
+  assert.equal(initializeCalls.length, 1);
+  initializeCalls[0].callback({ credential: 'google.jwt' });
+  assert.deepEqual(received, ['second:google.jwt']);
 });

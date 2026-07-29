@@ -9,8 +9,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOCAL_PROJECT_ID = 'demo-sentinel-dashboard';
 const LOCAL_EMULATOR_HOST = '127.0.0.1:8080';
+const LOCAL_LISTEN_HOST = '127.0.0.1';
+const LOCAL_BROWSER_HOST = 'localhost';
 const DEFAULT_LOCAL_PORT = 3000;
 const DEFAULT_READY_TIMEOUT_MS = 60_000;
+const DEFAULT_READY_REQUEST_TIMEOUT_MS = 15_000;
 const SUPPORTED_COMMANDS = new Set(['local', 'check', 'preview', 'production']);
 const CHILD_COMPLETION = Symbol('sentinelChildCompletion');
 const CHILD_SPAWN_ERROR = Symbol('sentinelChildSpawnError');
@@ -412,6 +415,7 @@ function buildLocalChildEnvironment(values, parentEnvironment = process.env) {
     FIRESTORE_EMULATOR_HOST: LOCAL_EMULATOR_HOST,
     GCP_PROJECT_ID: LOCAL_PROJECT_ID,
     NO_UPDATE_NOTIFIER: '1',
+    SENTINEL_CSP_DEV: '1',
   });
 }
 
@@ -544,7 +548,7 @@ function buildLocalPlan(options) {
         '--',
         '--local',
         '--listen',
-        `127.0.0.1:${options.port}`,
+        `${LOCAL_LISTEN_HOST}:${options.port}`,
       ],
     },
   ];
@@ -961,6 +965,7 @@ async function waitForChildWithin(child, timeoutMs) {
 async function waitForHttpReady(url, {
   child,
   fetchImplementation = fetch,
+  requestTimeoutMs = DEFAULT_READY_REQUEST_TIMEOUT_MS,
   timeoutMs = DEFAULT_READY_TIMEOUT_MS,
 } = {}) {
   const deadline = Date.now() + timeoutMs;
@@ -972,7 +977,11 @@ async function waitForHttpReady(url, {
       throw new Error(`Local service exited before becoming ready: ${url}`);
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 750);
+    const remainingMs = Math.max(1, deadline - Date.now());
+    const timeout = setTimeout(
+      () => controller.abort(),
+      Math.min(requestTimeoutMs, remainingMs),
+    );
     try {
       await fetchImplementation(url, { signal: controller.signal });
       clearTimeout(timeout);
@@ -1130,28 +1139,31 @@ async function runLocal(options, {
     });
     if (interrupted) return;
 
-    logger(`Starting Vercel Dev at http://localhost:${options.port} ...`);
+    logger(`Starting Vercel Dev for http://${LOCAL_BROWSER_HOST}:${options.port} ...`);
     const vercelDev = spawnNpm([
       'run',
       'dev:vercel',
       '--',
       '--local',
       '--listen',
-      `127.0.0.1:${options.port}`,
+      `${LOCAL_LISTEN_HOST}:${options.port}`,
     ], {
       cwd: root,
       environment: childEnvironment,
       ownedService: true,
     });
     ownedChildren.push(vercelDev);
-    const sessionUrl = `http://127.0.0.1:${options.port}/api/auth/session`;
+    const serverUrl = `http://${LOCAL_LISTEN_HOST}:${options.port}/`;
+    const sessionUrl = `http://${LOCAL_LISTEN_HOST}:${options.port}/api/auth/session`;
+    await waitForHttpReady(serverUrl, { child: vercelDev, requestTimeoutMs: 5_000 });
     await waitForHttpReady(sessionUrl, { child: vercelDev });
     const response = await fetch(sessionUrl, { redirect: 'manual' });
     const cacheControl = response.headers.get('cache-control')?.toLowerCase() ?? '';
     if (response.status !== 401 || !cacheControl.includes('private') || !cacheControl.includes('no-store')) {
       throw new Error('Local signed-out session smoke test failed');
     }
-    logger(`\nLocal smoke test passed. Open http://localhost:${options.port}`);
+    logger(`\nLocal smoke test passed. Open only http://${LOCAL_BROWSER_HOST}:${options.port}`);
+    logger('Google OAuth Authorized JavaScript origins must contain that exact origin.');
     logger('Press Ctrl+C to stop Vercel Dev and the Firestore Emulator.');
 
     const emulatorExit = waitForChild(emulator).then(result => ({ service: 'emulator', result }));

@@ -7,6 +7,48 @@ const CSRF_COOKIE_NAME = 'g_csrf_token';
 const SAFE_AUTH_CODE = /^[a-z0-9/_-]{1,80}$/i;
 let googleIdentityPromise = null;
 
+export function createGoogleIdentityConfigurator() {
+  let initializedIdentity = null;
+  let initializedClientId = '';
+  let activeCredentialHandler = null;
+
+  return {
+    configure(identity, { clientId, onCredential }) {
+      if (typeof identity?.initialize !== 'function' || typeof identity?.renderButton !== 'function') {
+        throw authError('gis-unavailable');
+      }
+      if (typeof clientId !== 'string' || !clientId || typeof onCredential !== 'function') {
+        throw authError('gis-invalid-configuration');
+      }
+      if (initializedIdentity === identity && initializedClientId !== clientId) {
+        throw authError('gis-client-changed');
+      }
+
+      activeCredentialHandler = onCredential;
+      if (initializedIdentity !== identity) {
+        identity.initialize({
+          client_id: clientId,
+          auto_select: false,
+          cancel_on_tap_outside: true,
+          callback: response => {
+            if (typeof response?.credential === 'string') {
+              activeCredentialHandler?.(response.credential);
+            }
+          },
+        });
+        initializedIdentity = identity;
+        initializedClientId = clientId;
+      }
+
+      return () => {
+        if (activeCredentialHandler === onCredential) activeCredentialHandler = null;
+      };
+    },
+  };
+}
+
+export const googleIdentityConfigurator = createGoogleIdentityConfigurator();
+
 function authError(code, status = 0) {
   const error = new Error(code);
   error.code = code.startsWith('auth/') ? code : `auth/${code}`;

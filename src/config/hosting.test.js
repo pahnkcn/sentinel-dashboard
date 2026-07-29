@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { createViteConfig } from '../../vite.config.js';
 
 const VERCEL_CONFIG_URL = new URL('../../vercel.json', import.meta.url);
 const FIREBASE_CONFIG_URL = new URL('../../firebase.json', import.meta.url);
@@ -57,13 +58,26 @@ test('content policy permits GIS but removes Firebase and App Check origins', as
   assert.doesNotMatch(policy, /firebase|recaptcha|gstatic/i);
 });
 
-test('SPA fallback explicitly excludes same-origin API routes', async () => {
+test('SPA fallback excludes APIs and applies only to browser document navigation', async () => {
   const config = await readJson(VERCEL_CONFIG_URL);
 
   assert.deepEqual(config.rewrites, [{
     source: '/:path((?!api(?:/|$)).*)',
+    has: [{
+      type: 'header',
+      key: 'accept',
+      value: '.*text/html.*',
+    }],
     destination: '/index.html',
   }]);
+});
+
+test('deployment helper local mode disables only the CSP-incompatible refresh preamble', () => {
+  const localConfig = createViteConfig({ SENTINEL_CSP_DEV: '1' });
+  const normalConfig = createViteConfig({});
+
+  assert.deepEqual(localConfig.server, { hmr: false });
+  assert.equal(normalConfig.server, undefined);
 });
 
 test('Firebase config retains only Firestore rules and the local emulator', async () => {

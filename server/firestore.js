@@ -126,7 +126,12 @@ export function createFirestoreRestClient({
       if (value != null && value !== '') url.searchParams.append(key, String(value));
     }
     const headers = { Accept: 'application/json' };
-    if (!emulator) headers.Authorization = `Bearer ${await getAccessToken()}`;
+    // The deny-all Firestore Rules must remain active for browser clients.
+    // `Bearer owner` is the Emulator's local admin identity and is reachable
+    // only after validateFirestoreEmulator has enforced demo-* + loopback.
+    headers.Authorization = emulator
+      ? 'Bearer owner'
+      : `Bearer ${await getAccessToken()}`;
     let response;
     try {
       response = await fetchImpl(url, {

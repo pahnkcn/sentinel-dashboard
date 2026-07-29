@@ -55,7 +55,7 @@ test('Firestore Emulator is allowed only on loopback with an explicit demo proje
   }
 });
 
-test('Firestore REST list is read-only, paginated, ordered and unauthenticated on emulator', async () => {
+test('Firestore REST list is read-only, paginated, ordered and uses local admin on emulator', async () => {
   let call;
   const client = createFirestoreRestClient({
     env: {
@@ -82,7 +82,7 @@ test('Firestore REST list is read-only, paginated, ordered and unauthenticated o
   });
   const url = new URL(call.url);
   assert.equal(call.options.method, 'GET');
-  assert.equal(call.options.headers.Authorization, undefined);
+  assert.equal(call.options.headers.Authorization, 'Bearer owner');
   assert.equal(url.searchParams.get('pageSize'), '1000');
   assert.equal(url.searchParams.get('pageToken'), 'first/page');
   assert.equal(url.searchParams.get('orderBy'), '__name__');

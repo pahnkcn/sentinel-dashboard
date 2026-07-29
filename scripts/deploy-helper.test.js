@@ -30,6 +30,7 @@ import {
   validateLocalEnvironment,
   validateTargetEnvironment,
   waitForChild,
+  waitForHttpReady,
   withCanonicalEnvironment,
   withoutCanonicalEnvironmentKeys,
 } from './deploy-helper.mjs';
@@ -157,6 +158,30 @@ test('local plan commits writes only to the guarded emulator target', () => {
   );
   assert.equal(plan.some(step => step.npmArgs.includes('demo:publish')), false);
   assert.equal(plan.some(step => step.npmArgs.includes('--prod')), false);
+  const vercelDev = plan.find(step => step.label.includes('Vercel Dev'));
+  assert.equal(
+    vercelDev.npmArgs[vercelDev.npmArgs.indexOf('--listen') + 1],
+    '127.0.0.1:3000',
+  );
+});
+
+test('readiness probe permits a Vercel Function cold start longer than 750ms', async () => {
+  let calls = 0;
+  await waitForHttpReady('http://127.0.0.1:3000/api/auth/session', {
+    fetchImplementation: async (_url, { signal }) => {
+      calls += 1;
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, 800);
+        signal.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(new Error('aborted'));
+        }, { once: true });
+      });
+      return { status: 401 };
+    },
+    timeoutMs: 2_000,
+  });
+  assert.equal(calls, 1);
 });
 
 test('dotenv parser handles BOM, CRLF, export, and quoted values without expansion', () => {
@@ -292,6 +317,7 @@ test('local child receives validated login values but no inherited production id
   assert.equal(child.OPENROUTER_MODEL, 'z-ai/glm-5.2');
   assert.equal(child.GCP_PROJECT_ID, LOCAL_PROJECT_ID);
   assert.equal(child.FIRESTORE_EMULATOR_HOST, LOCAL_EMULATOR_HOST);
+  assert.equal(child.SENTINEL_CSP_DEV, '1');
   assert.equal(child.GCP_SERVICE_ACCOUNT_EMAIL, undefined);
   assert.equal(child.VERCEL_OIDC_TOKEN, undefined);
 });

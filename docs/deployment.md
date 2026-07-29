@@ -18,9 +18,10 @@ Current references:
    a region compatible with the application's data-residency decision.
 2. Deploy `firestore.rules` before adding any documents. The rules deny every
    browser read and write, including Firebase-authenticated clients.
-3. Create a Google OAuth Web client. Register only the exact localhost,
-   production, and optional stable staging JavaScript origins. Do not add
-   wildcard preview domains.
+3. Create a Google OAuth Web client. For the helper, register the exact
+   JavaScript origin `http://localhost:3000` and always open that URL (not
+   `http://127.0.0.1:3000`). Register only the exact production and optional
+   stable staging origins later. Do not add wildcard preview domains.
 4. Record the OAuth client ID for both `VITE_GOOGLE_CLIENT_ID` and
    `GOOGLE_CLIENT_ID`; the values must match.
 5. Create a dedicated OpenRouter key only if Sentinel Analyst is enabled. Turn

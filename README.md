@@ -55,6 +55,8 @@ npm run deploy:local -- --email clinician@example.com --end-date 2026-07-28
 The local command requires a completed `.env.local`, forces project
 `demo-sentinel-dashboard` and host `127.0.0.1:8080`, and refuses occupied
 ports. It does not require a linked Vercel project.
+Open only `http://localhost:3000`; the Google OAuth Web client must contain that
+exact Authorized JavaScript origin. `http://127.0.0.1:3000` is a different origin.
 
 Remote commands require an existing `.vercel/project.json`, created manually
 with `npx vercel link`. The helper then pulls and validates the exact Preview or

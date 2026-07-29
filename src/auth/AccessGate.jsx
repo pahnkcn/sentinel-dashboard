@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { HeartPulse, LogOut, ShieldAlert } from 'lucide-react';
 
-import { getGoogleClientId, loadGoogleIdentity } from './authSession.js';
+import {
+  getGoogleClientId,
+  googleIdentityConfigurator,
+  loadGoogleIdentity,
+} from './authSession.js';
 
 export function AccessGate({ authorization }) {
   const { status, user, message, signIn, signOut } = authorization;
@@ -14,20 +18,17 @@ export function AccessGate({ authorization }) {
   useEffect(() => {
     if (isBusy || isUnauthorized || !clientId || !googleButtonRef.current) return undefined;
     let active = true;
+    let releaseCredentialHandler = () => {};
     setGoogleError('');
 
     loadGoogleIdentity()
       .then(identity => {
         if (!active || !googleButtonRef.current) return;
         googleButtonRef.current.replaceChildren();
-        identity.initialize({
-          client_id: clientId,
-          auto_select: false,
-          cancel_on_tap_outside: true,
-          callback: response => {
-            if (active && typeof response?.credential === 'string') {
-              void signIn(response.credential);
-            }
+        releaseCredentialHandler = googleIdentityConfigurator.configure(identity, {
+          clientId,
+          onCredential: credential => {
+            if (active) void signIn(credential);
           },
         });
         identity.renderButton(googleButtonRef.current, {
@@ -45,6 +46,7 @@ export function AccessGate({ authorization }) {
 
     return () => {
       active = false;
+      releaseCredentialHandler();
     };
   }, [clientId, isBusy, isUnauthorized, signIn]);
 
